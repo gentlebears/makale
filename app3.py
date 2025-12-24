@@ -23,9 +23,6 @@ nest_asyncio.apply()
 gemini_api_key = st.secrets["gemini_key"]
 openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
-gemini_api_key = "AIzaSyARKAp5U56ZjCEFvCh6u2hG0l-hJPAX-HQ"
-openai_api_key = "sk-proj-..." # Kendi OpenAI keyini buraya gir
-ADMIN_PASSWORD = "1234" # Öğretmen paneli için şifre
 
 # --- FIREBASE BAĞLANTISI (TEK SEFERLİK) ---
 if not firebase_admin._apps:
@@ -311,3 +308,4 @@ elif st.session_state['step'] == 4:
             else:
 
                 st.error("Kayıt sırasında bir hata oluştu.")
+
