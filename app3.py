@@ -27,12 +27,12 @@ ADMIN_PASSWORD = st.secrets["admin_password"]
 # --- FIREBASE BAĞLANTISI (GÜVENLİ & PUBLIC YÖNTEM) ---
 if not firebase_admin._apps:
     try:
-        # Streamlit Secrets (Kasa) içindeki JSON verisini okuyoruz
-        firebase_info = json.loads(st.secrets["firebase_json"])
-        cred = credentials.Certificate(firebase_info)
+        # Secrets içindeki [firebase] tablosunu direkt sözlük olarak alıyoruz
+        key_dict = dict(st.secrets["firebase"])
+        cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebase Bağlantı Hatası: {e}")
+        st.error(f"Firebase Hatası: {e}")
         st.stop()
 
 db = firestore.client()
@@ -309,5 +309,6 @@ elif st.session_state['step'] == 4:
             else:
 
                 st.error("Kayıt sırasında bir hata oluştu.")
+
 
 
