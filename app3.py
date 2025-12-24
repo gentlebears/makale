@@ -25,10 +25,15 @@ openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
 # --- FIREBASE BAĞLANTISI (GÜVENLİ & PUBLIC YÖNTEM) ---
+# --- FIREBASE BAĞLANTISI (KESİN ÇÖZÜM) ---
 if not firebase_admin._apps:
     try:
-        # Secrets içindeki [firebase] tablosunu direkt sözlük olarak alıyoruz
+        # Secrets'tan veriyi al
         key_dict = dict(st.secrets["firebase"])
+        
+        # 🔥 BU SATIR ÇOK ÖNEMLİ: \n yazılarını gerçek ENTER tuşuna çevirir
+        key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+        
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
@@ -309,6 +314,7 @@ elif st.session_state['step'] == 4:
             else:
 
                 st.error("Kayıt sırasında bir hata oluştu.")
+
 
 
 
