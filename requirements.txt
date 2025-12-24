@@ -1,7 +1,9 @@
 streamlit
+openai-whisper
 openai
 google-generativeai
 firebase-admin
 pandas
 fpdf
 nest_asyncio
+edge-tts
