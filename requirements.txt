@@ -1,0 +1,7 @@
+streamlit
+openai
+google-generativeai
+firebase-admin
+pandas
+fpdf
+nest_asyncio
