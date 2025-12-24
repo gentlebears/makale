@@ -19,6 +19,10 @@ st.set_page_config(page_title="Gemini Eğitim Platformu (Cloud)", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
+# --- API KEYLER (SECRETS'TAN ÇEKİLİYOR - ARTIK GÜVENLİ) ---
+gemini_api_key = st.secrets["gemini_key"]
+openai_api_key = st.secrets["openai_key"]
+ADMIN_PASSWORD = st.secrets["admin_password"]
 gemini_api_key = "AIzaSyARKAp5U56ZjCEFvCh6u2hG0l-hJPAX-HQ"
 openai_api_key = "sk-proj-..." # Kendi OpenAI keyini buraya gir
 ADMIN_PASSWORD = "1234" # Öğretmen paneli için şifre
@@ -305,4 +309,5 @@ elif st.session_state['step'] == 4:
                 st.info(f"Son Puanın: {score}")
                 st.stop() # Uygulamayı bitir
             else:
+
                 st.error("Kayıt sırasında bir hata oluştu.")
