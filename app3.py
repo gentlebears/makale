@@ -24,14 +24,15 @@ gemini_api_key = st.secrets["gemini_key"]
 openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
-# --- FIREBASE BAĞLANTISI (TEK SEFERLİK) ---
+# --- FIREBASE BAĞLANTISI (GÜVENLİ & PUBLIC YÖNTEM) ---
 if not firebase_admin._apps:
     try:
-        # İndirdiğin json dosyasının adı 'firebase_key.json' olmalı
-        cred = credentials.Certificate("firebase_key.json") 
+        # Streamlit Secrets (Kasa) içindeki JSON verisini okuyoruz
+        firebase_info = json.loads(st.secrets["firebase_json"])
+        cred = credentials.Certificate(firebase_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebase Bağlantı Hatası: {e}. Lütfen json dosyasını kontrol et.")
+        st.error(f"Firebase Bağlantı Hatası: {e}")
         st.stop()
 
 db = firestore.client()
@@ -308,4 +309,5 @@ elif st.session_state['step'] == 4:
             else:
 
                 st.error("Kayıt sırasında bir hata oluştu.")
+
 
