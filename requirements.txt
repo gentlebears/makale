@@ -1,9 +1,9 @@
 streamlit
-openai-whisper
 openai
-google-generativeai
+google-generativeai>=0.7.0
 firebase-admin
 pandas
 fpdf
+whisper
 nest_asyncio
-edge-tts
+watchdog
