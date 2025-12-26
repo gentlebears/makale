@@ -9,6 +9,7 @@ import subprocess
 import random
 import nest_asyncio
 import pandas as pd
+import numpy as np  # EKLENDİ: Veri işleme için gerekli
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -25,7 +26,6 @@ openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
 # --- FIREBASE BAĞLANTISI (DÜZELTİLMİŞ) ---
-# Önce db değişkenini boş tanımlayalım ki NameError vermesin
 db = None 
 
 if not firebase_admin._apps:
@@ -38,19 +38,18 @@ if not firebase_admin._apps:
         st.error(f"Firebase Bağlantı Hatası: {e}")
         st.stop()
 
-# BU SATIR ARTIK 'IF' BLOĞUNUN DIŞINDA VE GÜVENDE 
 try:
     db = firestore.client()
 except Exception as e:
     st.error(f"Veritabanı İstemcisi Hatası: {e}")
 
 # --- API BAĞLANTILARI (GÜVENLİ MOD) ---
-client = None # NameError önleyici
+client = None 
 try:
     genai.configure(api_key=gemini_api_key)
     client = OpenAI(api_key=openai_api_key)
 except: 
-    pass # Hata olsa bile client=None olduğu için kod patlamaz
+    pass 
 
 # --- STATE YÖNETİMİ ---
 def init_state():
@@ -78,7 +77,7 @@ def save_results_to_firebase(student_data):
         st.error("Veritabanı bağlantısı yok!")
         return False
     try:
-        doc_ref = db.collection('exam_results').document(student_data['no'])
+        doc_ref = db.collection('exam_results').document(str(student_data['no'])) # No string olmalı
         doc_ref.set(student_data)
         return True
     except Exception as e:
@@ -98,6 +97,72 @@ def get_class_data_from_firebase():
     except Exception as e:
         st.error(f"Veri Çekme Hatası: {e}")
         return []
+
+# --- VERİ DÜZELTME VE FORMATLAMA MOTORU (YENİ EKLENDİ) ---
+def format_data_for_csv(df):
+    """
+    Karmaşık veriyi alır, 0/None hatalarını düzeltir 
+    ve istenen CSV formatına çevirir.
+    """
+    # 1. Puanları Birleştir (on_test_puan yoksa on_test'i al)
+    if 'on_test_puan' in df.columns and 'on_test' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
+    elif 'on_test' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test']
+    elif 'on_test_puan' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test_puan']
+    else:
+        df['1. Test Doğru Sayısı'] = 0 # Hiçbir sütun yoksa
+
+    # Aynı işlemi son test için yap
+    if 'son_test_puan' in df.columns and 'son_test' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test_puan'].combine_first(df['son_test'])
+    elif 'son_test' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test']
+    elif 'son_test_puan' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test_puan']
+    else:
+        df['2. Test Doğru Sayısı'] = 0
+
+    # 2. None (Boş) Olanları 0 Yap ve Tamsayıya Çevir
+    # pd.to_numeric ile hatalı karakter varsa (örn: boş string) onları NaN yapıp sonra 0'a çeviriyoruz
+    df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
+    df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
+
+    # 3. NET Hesapla
+    df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
+
+    # 4. İsimlendirmeleri ve Sabitleri Ayarla
+    # Sütun isimleri bazen farklı gelebilir, kontrol edelim
+    if 'ad_soyad' in df.columns:
+        df['Ad Soyad'] = df['ad_soyad']
+    else:
+        df['Ad Soyad'] = "Bilinmiyor"
+        
+    if 'no' in df.columns:
+        df['Öğrenci No'] = df['no']
+    else:
+        df['Öğrenci No'] = 0
+
+    df['Soru Sayısı'] = 15  # Sabit değer
+
+    # 5. Sadece İstenen Sütunları Seç
+    target_columns = [
+        'Ad Soyad', 
+        'Öğrenci No', 
+        'Soru Sayısı', 
+        '1. Test Doğru Sayısı', 
+        '2. Test Doğru Sayısı', 
+        'NET'
+    ]
+    
+    # Sadece bu sütunları içeren temiz bir kopya döndür
+    # Sütunların hepsi mevcut mu kontrol et, değilse oluştur
+    for col in target_columns:
+        if col not in df.columns:
+            df[col] = 0 if 'Sayısı' in col or 'NET' in col or 'No' in col else ""
+
+    return df[target_columns]
 
 # --- YARDIMCI: PDF İÇİN KARAKTER DÜZELTİCİ ---
 def safe_text(text):
@@ -298,10 +363,30 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                 except Exception as e: st.error(str(e))
     
     with col2:
-        if st.button("Sonuçları Gör"):
-            data = get_class_data_from_firebase()
-            if data: st.dataframe(pd.DataFrame(data))
-            else: st.info("Henüz sonuç yok.")
+        # --- GÜNCELLENEN SONUÇLARI GÖR KISMI ---
+        st.subheader("Sınav Sonuçları")
+        if st.button("Sonuçları Gör / Yenile"):
+            data_raw = get_class_data_from_firebase()
+            if data_raw:
+                # Veriyi DataFrame'e çevir
+                df_raw = pd.DataFrame(data_raw)
+                
+                # ÖZEL FONKSİYON İLE VERİYİ TEMİZLE VE HESAPLA
+                df_clean = format_data_for_csv(df_raw)
+                
+                # Tabloyu Göster
+                st.dataframe(df_clean, use_container_width=True)
+                
+                # CSV İndirme Butonu
+                csv_data = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 Tabloyu Excel (CSV) Olarak İndir",
+                    data=csv_data,
+                    file_name="ogrenci_sinav_sonuclari.csv",
+                    mime="text/csv"
+                )
+            else: 
+                st.info("Henüz veritabanında sonuç yok.")
 
 # --- ADIM 2: ÖN TEST ---
 elif st.session_state['step'] == 2:
@@ -400,7 +485,7 @@ elif st.session_state['step'] == 4:
                 "ad_soyad": st.session_state['student_info']['name'],
                 "no": st.session_state['student_info']['no'],
                 "tarih": time.strftime("%Y-%m-%d %H:%M"),
-                "on_test": st.session_state['scores']['pre'],
+                "on_test": st.session_state['scores']['pre'], # Eski puan (0 gelebilir)
                 "son_test": score
             }
             if save_results_to_firebase(res):
