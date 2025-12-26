@@ -86,10 +86,10 @@ def get_class_data_from_firebase():
 @st.cache_resource
 def load_whisper():
     # RAM dostu Tiny model + CPU modu
-    return whisper.load_model("tiny", device="cpu")
+    return whisper.load_model("base", device="cpu")
 
 def sesi_sokup_al(video_path, audio_path):
-    command = ["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-q:a", "9", "-y", audio_path]
+    command = ["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-y", audio_path]
     try: 
         subprocess.run(command, capture_output=True, text=True)
         return True
@@ -352,4 +352,5 @@ elif st.session_state['step'] == 4:
             save_results_to_firebase(final_data)
             st.balloons()
             st.success(f"Bitti! Puan: {score}")
+
 
