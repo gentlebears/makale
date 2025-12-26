@@ -17,122 +17,149 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Stable)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="Gemini Eğitim Platformu", layout="wide", page_icon="🎓")
 nest_asyncio.apply()
 
-# --- STİL (CSS) ---
+# =============================================================================
+# --- CSS VE TASARIM ENTEGRASYONU ---
+# (Senin gönderdiğin font ailesini CDN üzerinden çekip uyguluyoruz)
+# =============================================================================
 st.markdown("""
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
 <style>
-    /* Genel sayfa stili */
-    .main {
-        background-color: #f8f9fa;
-    }
-    h1, h2, h3 {
-        color: #343a40;
+    /* 1. GLOBAL FONT AYARLARI (Senin CSS'ine uygun) */
+    html, body, [class*="css"] {
+        font-family: 'Source Sans 3', sans-serif;
+        color: #2c3e50;
     }
     
-    /* Tab sekmeleri stili */
-    .stTabs [data-baseweb="tab-list"] {
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Source Serif 4', serif;
+        font-weight: 700;
+        color: #1a1a1a;
+    }
+    
+    code {
+        font-family: 'Source Code Pro', monospace;
+    }
+
+    /* 2. KAĞIT / KART TASARIMI */
+    .block-container {
+        padding-top: 3rem;
+        padding-bottom: 3rem;
+        max-width: 1000px;
+    }
+
+    /* Kartların Stili */
+    .stCard {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        transition: box-shadow 0.3s ease;
+    }
+    .stCard:hover {
+        box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+    }
+
+    /* 3. ÖZEL BİLEŞENLER */
+    
+    /* Soru Kartları */
+    .question-box {
+        background-color: #fff;
+        border-left: 4px solid #3498db;
+        padding: 20px;
+        margin-bottom: 15px;
+        border-radius: 0 8px 8px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        font-family: 'Source Serif 4', serif;
+        font-size: 1.1rem;
+    }
+    
+    /* Çalışma Planı Kutuları */
+    .topic-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 24px;
+        background: white;
+    }
+    
+    .topic-header {
+        padding: 12px 20px;
+        font-family: 'Source Sans 3', sans-serif;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
         gap: 10px;
     }
+    
+    .topic-header.success {
+        background-color: #f0fdf4;
+        color: #166534;
+        border-bottom: 1px solid #dcfce7;
+    }
+    
+    .topic-header.error {
+        background-color: #fef2f2;
+        color: #991b1b;
+        border-bottom: 1px solid #fee2e2;
+    }
+    
+    .topic-content {
+        padding: 20px;
+        font-family: 'Source Sans 3', sans-serif;
+        line-height: 1.6;
+        color: #374151;
+    }
+    
+    /* Ek Kaynak Kutusu - Akademik Görünüm */
+    .extra-source {
+        margin-top: 15px;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-top: 1px solid #eee;
+        font-family: 'Source Serif 4', serif;
+        font-style: italic;
+        color: #555;
+        font-size: 0.95rem;
+    }
+    
+    /* Buton Özelleştirmesi */
+    .stButton > button {
+        border-radius: 6px;
+        font-family: 'Source Sans 3', sans-serif;
+        font-weight: 600;
+        border: none;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s;
+    }
+    
+    /* Input Alanları */
+    .stTextInput > div > div > input {
+        font-family: 'Source Sans 3', sans-serif;
+    }
+    
+    /* Sekme (Tab) Tasarımı */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #e9ecef;
-        border-radius: 5px 5px 0px 0px;
-        gap: 5px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        color: #495057;
+        background-color: transparent;
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-family: 'Source Sans 3', sans-serif;
         font-weight: 600;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #ffffff !important;
-        color: #007bff !important;
-        border-top: 3px solid #007bff;
-    }
-
-    /* Form ve kutu stilleri */
-    .stForm, .css-1r6slb0 {
-        background-color: #ffffff;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        border: 1px solid #dee2e6;
-    }
-    
-    /* Buton stilleri */
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3rem;
-        font-weight: bold;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-
-    /* Soru kartları stili */
-    .question-card {
-        background-color: #ffffff;
-        padding: 20px;
-        margin-bottom: 15px;
-        border-radius: 8px;
-        border-left: 5px solid #007bff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .question-title {
-        font-weight: bold;
-        color: #343a40;
-        margin-bottom: 10px;
-    }
-
-    /* Çalışma planı kutuları stili */
-    .study-card {
-        border-radius: 8px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        overflow: hidden;
-    }
-    .study-card-header {
-        padding: 15px;
-        font-weight: bold;
-        color: white;
-    }
-    .study-card-body {
-        background-color: #ffffff;
-        padding: 20px;
-        line-height: 1.6;
-    }
-    .study-card-error {
-        border: 2px solid #dc3545;
-    }
-    .study-card-error .study-card-header {
-        background-color: #dc3545;
-    }
-    .study-card-success {
-        border: 2px solid #28a745;
-    }
-    .study-card-success .study-card-header {
-        background-color: #28a745;
-    }
-    
-    /* Ek kaynak kutusu stili */
-    .extra-resource-box {
-        background-color: #f1f3f5;
-        border-left: 4px solid #6c757d;
-        padding: 15px;
-        margin-top: 15px;
-        border-radius: 4px;
-    }
-    .extra-resource-title {
-        font-weight: bold;
-        color: #495057;
-        margin-bottom: 5px;
+        background-color: #f3f4f6;
+        color: #111827;
     }
 
 </style>
@@ -189,7 +216,7 @@ def init_state():
 
 init_state()
 
-# --- FIREBASE KAYIT FONKSİYONLARI ---
+# --- FIREBASE KAYIT ---
 def save_results_to_firebase(student_data):
     if db is None:
         st.error("Veritabanı bağlantısı yok!")
@@ -216,7 +243,7 @@ def get_class_data_from_firebase():
         st.error(f"Veri Çekme Hatası: {e}")
         return []
 
-# --- VERİ DÜZELTME VE FORMATLAMA MOTORU ---
+# --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
@@ -342,104 +369,103 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- GELİŞMİŞ PDF SINIFI VE FONKSİYONU ---
+# --- GELİŞMİŞ PDF TASARIMI (İSTEĞİNE UYGUN) ---
 class PDF(FPDF):
     def header(self):
-        # Üst bilgi (Header)
-        self.set_font('Arial', 'B', 12)
-        self.set_text_color(100, 100, 100)
-        self.cell(0, 10, safe_text('Gemini Egitim Platformu - Kisisellestirilmis Calisma Plani'), 0, 1, 'R')
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(150, 150, 150)
+        self.cell(0, 10, safe_text('Gemini Egitim Platformu | Kisisel Calisma Plani'), 0, 1, 'R')
         self.ln(5)
 
     def footer(self):
-        # Alt bilgi (Footer)
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.set_text_color(128, 128, 128)
+        self.set_text_color(180, 180, 180)
         self.cell(0, 10, safe_text('Sayfa ') + str(self.page_no()), 0, 0, 'C')
 
-    def chapter_body(self, body, is_extra=False):
-        # Konu içeriği metni
-        if is_extra:
-            self.set_font('Arial', 'I', 10)
-            self.set_text_color(80, 80, 80) # Ek bilgi için gri renk
-            self.multi_cell(0, 5, safe_text("[EK KAYNAK]: " + body))
-        else:
-            self.set_font('Arial', '', 11)
-            self.set_text_color(0, 0, 0) # Normal metin siyah
-            self.multi_cell(0, 6, safe_text(body))
-        self.ln()
-
-    def draw_topic_box(self, title, summary, extra_info, is_mistake, include_extra):
-        # Konu kutusunu çiz
-        self.set_draw_color(200, 200, 200)
-        self.set_line_width(0.5)
-        
-        # Başlık rengi: Hata ise kırmızı, değilse mavi/yeşil
+    def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
+        # Renk Paleti (CSS'e uyumlu)
         if is_mistake:
-            self.set_fill_color(220, 53, 69) # Kırmızı
-            title_prefix = "(!) [TEKRAR ET] "
+            header_fill = (254, 242, 242) # Açık Kırmızı
+            header_text = (153, 27, 27)   # Koyu Kırmızı
+            border_col = (252, 165, 165)  # Kenarlık Kırmızı
+            status_text = "(!) TEKRAR ET"
         else:
-            self.set_fill_color(40, 167, 69) # Yeşil
-            title_prefix = "[TAMAMLANDI] "
-            
-        self.set_text_color(255, 255, 255)
-        self.set_font('Arial', 'B', 12)
+            header_fill = (240, 253, 244) # Açık Yeşil
+            header_text = (22, 101, 52)   # Koyu Yeşil
+            border_col = (134, 239, 172)  # Kenarlık Yeşil
+            status_text = "TAMAMLANDI"
+
+        # Kutu Çizimi
+        self.set_draw_color(*border_col)
+        self.set_line_width(0.3)
         
-        # Başlık hücresi
-        self.cell(0, 10, safe_text(title_prefix + title), 1, 1, 'L', True)
+        # Başlık Arka Planı
+        self.set_fill_color(*header_fill)
+        self.set_text_color(*header_text)
+        self.set_font('Arial', 'B', 11)
         
-        # İçerik kutusu
-        self.set_fill_color(250, 250, 250)
-        self.set_text_color(0, 0, 0)
-        self.set_font('Arial', '', 11)
+        # X ve Y koordinatlarını sakla
+        x = self.get_x()
+        y = self.get_y()
         
-        # İçerik için başlangıç Y koordinatı
-        start_y = self.get_y()
+        # Başlık Hücresi
+        title_full = f"{status_text}: {safe_text(title)}"
+        self.cell(0, 10, title_full, 1, 1, 'L', True)
         
-        # Kenarlık çizmek için dikdörtgen, yüksekliği sonra ayarlanacak
-        self.rect(self.get_x(), start_y, self.w - 2 * self.l_margin, 1, 'D')
+        # İçerik Alanı (Kenarlıklar için)
+        content_start_y = self.get_y()
         
-        self.set_xy(self.get_x() + 2, start_y + 2) # İçeriği biraz içeriden başlat
+        # Özet Metni
+        self.set_text_color(50, 50, 50)
+        self.set_font('Arial', '', 10)
+        self.set_xy(x + 2, content_start_y + 3) # Biraz içeriden başla
+        self.multi_cell(0, 5, safe_text(summary))
         
-        # Özet metni
-        self.chapter_body(summary)
-        
-        # Ek bilgi varsa ve isteniyorsa ekle
+        # Ek Kaynak (Eğer isteniyorsa ve varsa)
         if include_extra and extra_info:
-            self.ln(2)
-            self.set_draw_color(150, 150, 150)
-            self.line(self.get_x(), self.get_y(), self.w - self.r_margin - 2, self.get_y())
             self.ln(3)
-            self.chapter_body(extra_info, is_extra=True)
+            # Ayırıcı çizgi
+            line_y = self.get_y()
+            self.set_draw_color(220, 220, 220)
+            self.line(x + 2, line_y, 200, line_y)
+            self.ln(3)
             
-        # İçerik bittikten sonra kutunun alt kenarlığını çizmek için yüksekliği hesapla
-        end_y = self.get_y()
-        box_height = end_y - start_y + 2
+            # Ek Bilgi Başlığı
+            self.set_font('Arial', 'BI', 9)
+            self.set_text_color(80, 80, 80)
+            self.cell(0, 5, safe_text("Akademik Not / Ek Kaynak:"), 0, 1)
+            
+            # Ek Bilgi Metni
+            self.set_font('Arial', 'I', 9)
+            self.multi_cell(0, 5, safe_text(extra_info))
         
-        # Daha önce çizilen dikdörtgenin yüksekliğini güncelle
-        self.set_xy(self.l_margin, start_y)
-        self.rect(self.get_x(), self.get_y(), self.w - 2 * self.l_margin, box_height, 'D')
+        # Alt boşluk ve kutu kapama
+        self.ln(3)
+        content_end_y = self.get_y()
         
-        self.set_y(end_y + 5) # Bir sonraki kutu için boşluk
+        # Kutunun dış çerçevesini çiz (Başlıktan aşağıya kadar)
+        self.set_draw_color(*border_col)
+        self.set_xy(x, content_start_y)
+        self.rect(x, content_start_y, 190, content_end_y - content_start_y)
+        
+        self.set_y(content_end_y + 6) # Bir sonraki kutu için boşluk
 
 def create_study_pdf(data, mistakes, include_extra=True):
     pdf = PDF()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=25)
-    pdf.set_left_margin(15)
-    pdf.set_right_margin(15)
+    pdf.set_auto_page_break(auto=True, margin=20)
     
-    # Kapak Sayfası gibi başlık
-    pdf.set_font("Arial", 'B', 24)
-    pdf.set_text_color(0, 51, 102)
-    pdf.cell(0, 20, safe_text("KISISELLESTIRILMIS CALISMA PLANI"), ln=1, align='C')
+    # Ana Başlık
+    pdf.set_font("Arial", 'B', 22)
+    pdf.set_text_color(33, 37, 41)
+    pdf.cell(0, 15, safe_text("CALISMA PLANI RAPORU"), ln=1, 'C')
     
-    # Alt başlık
-    pdf.set_font("Arial", '', 14)
+    # Alt Bilgi
+    pdf.set_font("Arial", '', 12)
     pdf.set_text_color(100, 100, 100)
-    type_text = "Genis Ozet (Ek Kaynaklar Dahil)" if include_extra else "Ozet (Sadece Konu Anlatimi)"
-    pdf.cell(0, 10, safe_text(f"Rapor Tipi: {type_text}"), ln=1, align='C')
+    type_str = "Detayli Akademik Rapor" if include_extra else "Ozet Konu Anlatimi"
+    pdf.cell(0, 8, safe_text(f"Rapor Turu: {type_str}"), ln=1, 'C')
     pdf.ln(10)
     
     for i, item in enumerate(data):
@@ -448,21 +474,18 @@ def create_study_pdf(data, mistakes, include_extra=True):
         ek_bilgi = item.get('ek_bilgi', '')
         is_mistake = i in mistakes
         
-        pdf.draw_topic_box(baslik, ozet, ek_bilgi, is_mistake, include_extra)
+        pdf.topic_section(baslik, ozet, ek_bilgi, is_mistake, include_extra)
         
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
-# ================= ARAYÜZ =================
+# ================= ARAYÜZ (YENİLENMİŞ TASARIM) =================
 
-# Sayfa başlığı ve ikonu
-col1, col2 = st.columns([1, 5])
-with col1:
-    st.image("https://cdn-icons-png.flaticon.com/512/2921/2921222.png", width=80)
-with col2:
-    st.title("Gemini Eğitim Platformu (Cloud v4)")
-    st.markdown("*Yapay Zeka Destekli Kişiselleştirilmiş Öğrenme Deneyimi*")
-
-st.markdown("---")
+st.markdown("""
+    <div style='text-align: center; margin-bottom: 30px;'>
+        <h1 style='font-family: "Source Serif 4", serif; color: #1e293b; font-size: 3rem;'>Gemini Eğitim Platformu</h1>
+        <p style='font-family: "Source Sans 3", sans-serif; color: #64748b; font-size: 1.2rem;'>Yapay Zeka Destekli, Akademik Standartlarda Öğrenme Deneyimi</p>
+    </div>
+""", unsafe_allow_html=True)
 
 LESSON_FILE = "lesson_data.json"
 
@@ -474,64 +497,56 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
 
 # --- GİRİŞ ---
 if st.session_state['step'] == 0:
-    tab1, tab2 = st.tabs(["👨‍🎓 Öğrenci Girişi", "👨‍🏫 Öğretmen Paneli"])
-    
-    with tab1:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            with st.form("student_login_form"):
-                st.subheader("Öğrenci Girişi")
-                st.markdown("Sınava başlamak için bilgilerinizi giriniz.")
-                s_name = st.text_input("Ad Soyad", placeholder="Örn: Ali Yılmaz")
-                s_no = st.text_input("Öğrenci No", placeholder="Örn: 12345")
-                
-                submitted = st.form_submit_button("🚀 Sınava Başla")
-                if submitted:
-                    if s_name and s_no:
-                        if not st.session_state['data']:
-                            st.error("Henüz bir ders yüklenmemiş. Lütfen öğretmeninize danışın.")
-                        else:
-                            st.session_state['student_info'] = {'name': s_name, 'no': s_no}
-                            st.session_state['user_role'] = 'student'
-                            st.session_state['step'] = 2 
-                            st.rerun()
-                    else: st.warning("Lütfen tüm bilgileri eksiksiz giriniz.")
-
-    with tab2:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            with st.form("admin_login_form"):
-                st.subheader("Öğretmen Girişi")
-                st.markdown("Yönetici paneline erişmek için şifre giriniz.")
-                pwd = st.text_input("Şifre", type="password", placeholder="••••••")
-                
-                submitted = st.form_submit_button("🔑 Giriş Yap")
-                if submitted:
-                    if pwd == ADMIN_PASSWORD:
-                        st.session_state['user_role'] = 'admin'
-                        st.session_state['step'] = 1
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        
+        tab1, tab2 = st.tabs(["Öğrenci Girişi", "Öğretmen Girişi"])
+        
+        with tab1:
+            st.markdown("### 🎓 Öğrenci Portalı")
+            s_name = st.text_input("Ad Soyad", placeholder="Tam adınızı giriniz")
+            s_no = st.text_input("Öğrenci Numarası", placeholder="Numaranızı giriniz")
+            if st.button("Sınava Başla", type="primary"):
+                if s_name and s_no:
+                    if not st.session_state['data']:
+                        st.error("Sistemde yüklü ders bulunamadı.")
+                    else:
+                        st.session_state['student_info'] = {'name': s_name, 'no': s_no}
+                        st.session_state['user_role'] = 'student'
+                        st.session_state['step'] = 2 
                         st.rerun()
-                    else: st.error("Hatalı Şifre! Lütfen tekrar deneyin.")
+                else: st.warning("Lütfen bilgileri eksiksiz giriniz.")
+
+        with tab2:
+            st.markdown("### 🏛️ Yönetici Paneli")
+            pwd = st.text_input("Yönetici Şifresi", type="password")
+            if st.button("Panele Giriş", type="secondary"):
+                if pwd == ADMIN_PASSWORD:
+                    st.session_state['user_role'] = 'admin'
+                    st.session_state['step'] = 1
+                    st.rerun()
+                else: st.error("Erişim reddedildi.")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- ADIM 1: ÖĞRETMEN ---
 elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
-    st.header("👨‍🏫 Yönetici Paneli")
+    st.markdown("<h2 style='text-align:center;'>Yönetici Kontrol Paneli</h2>", unsafe_allow_html=True)
     
-    tab_ders, tab_sonuc = st.tabs(["📚 Ders İşle / Yükle", "📊 Sınav Sonuçları"])
+    tab_ders, tab_sonuc = st.tabs(["📚 Ders İçeriği Yönetimi", "📊 Sınav Analitikleri"])
     
     with tab_ders:
-        st.subheader("Yeni Ders İçeriği Oluştur")
-        st.markdown("Bir video dosyası yükleyin, yapay zeka sizin için ders notları ve sorular hazırlasın.")
-        
+        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        st.subheader("Yeni Ders Yükle")
         col1, col2 = st.columns([2, 1])
         with col1:
-            up = st.file_uploader("Video Yükle (.mp4)", type=["mp4"], help="Maksimum 200MB boyutunda bir video dosyası seçin.")
+            up = st.file_uploader("Video Dosyası Seç (.mp4)", type=["mp4"])
         with col2:
-            if up:
-                st.video(up)
+            if up: st.video(up)
             
-        if up and st.button("✨ Dersi İşle ve Hazırla", type="primary"):
-            with st.spinner("Yapay zeka videoyu analiz ediyor, lütfen bekleyin..."):
+        if up and st.button("Analizi Başlat", type="primary"):
+            with st.spinner("Yapay zeka akademik analiz yapıyor..."):
                 try:
                     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
                     tfile.write(up.read())
@@ -546,51 +561,37 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                             with open(LESSON_FILE, 'w', encoding='utf-8') as f:
                                 json.dump(analysis, f, ensure_ascii=False)
                             st.session_state['data'] = analysis
-                            st.success("🎉 Ders başarıyla hazırlandı ve kaydedildi!")
-                            st.balloons()
-                        else: st.error("AI analiz sırasında bir hata oluştu veya yanıt vermedi.")
-                    else: st.error("Videonun sesi ayrıştırılamadı. Dosya formatını kontrol edin.")
-                except Exception as e: st.error(f"Bir hata oluştu: {str(e)}")
+                            st.success("Ders içeriği başarıyla oluşturuldu.")
+                        else: st.error("AI yanıt vermedi.")
+                    else: st.error("Ses işleme hatası.")
+                except Exception as e: st.error(str(e))
+        st.markdown("</div>", unsafe_allow_html=True)
     
     with tab_sonuc:
-        st.subheader("Öğrenci Performans Raporları")
-        
-        col1, col2 = st.columns([3, 1])
+        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        col1, col2 = st.columns([4, 1])
         with col2:
-            refresh = st.button("🔄 Sonuçları Yenile")
-            
-        if refresh or 'data_raw' not in st.session_state:
-             st.session_state['data_raw'] = get_class_data_from_firebase()
-
-        data_raw = st.session_state.get('data_raw', [])
+            if st.button("Verileri Yenile"):
+                 st.session_state['data_raw'] = get_class_data_from_firebase()
+        
+        data_raw = st.session_state.get('data_raw', get_class_data_from_firebase())
         
         if data_raw:
             df_raw = pd.DataFrame(data_raw)
-            mevcut_soru_sayisi = len(st.session_state['data']) if st.session_state['data'] else 15
-            df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru_sayisi)
+            mevcut_soru = len(st.session_state['data']) if st.session_state['data'] else 15
+            df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru)
             
             st.dataframe(df_clean, use_container_width=True)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Toplam Öğrenci", len(df_clean))
-            with col2:
-                st.metric("Ortalama NET", f"{df_clean['NET'].mean():.2f}")
-                
-            csv_data = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
-            st.download_button(
-                label="📥 Tabloyu Excel (CSV) Olarak İndir",
-                data=csv_data,
-                file_name="ogrenci_sinav_sonuclari.csv",
-                mime="text/csv",
-                type="secondary"
-            )
-        else: 
-            st.info("Henüz veritabanında kayıtlı sınav sonucu bulunmamaktadır.")
+            csv = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
+            st.download_button("📥 Excel Olarak İndir", csv, "sonuclar.csv", "text/csv")
+        else:
+            st.info("Kayıtlı veri bulunamadı.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- ADIM 2: ÖN TEST ---
 elif st.session_state['step'] == 2:
-    st.info(f"👋 Merhaba **{st.session_state['student_info']['name']}**, ön teste hoş geldin. Lütfen tüm soruları dikkatlice cevapla.")
+    st.info(f"Hoş geldin, {st.session_state['student_info']['name']}. Lütfen seviye tespit sınavını tamamla.")
     
     with st.form("pre_test_form"):
         ans = {}
@@ -598,185 +599,124 @@ elif st.session_state['step'] == 2:
             q = item['soru_data']
             
             st.markdown(f"""
-            <div class="question-card">
-                <div class="question-title">SORU {i+1}</div>
-                <div>{q['soru']}</div>
+            <div class="question-box">
+                <strong>SORU {i+1}:</strong> {q['soru']}
             </div>
             """, unsafe_allow_html=True)
             
-            ans[i] = st.radio(
-                "Cevabınızı Seçin:", 
-                [q['A'], q['B'], q['C'], q['D']], 
-                key=f"p_{i}", 
-                index=None,
-                format_func=lambda x: f"{x}" # Seçeneklerin metnini doğrudan göster
-            )
-            st.write("") # Boşluk bırak
+            ans[i] = st.radio("Seçiniz:", [q['A'], q['B'], q['C'], q['D']], key=f"p_{i}", label_visibility="collapsed")
+            st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("---")
-        submitted = st.form_submit_button("✅ Testi Bitir ve Sonuçları Gör", type="primary")
+        submitted = st.form_submit_button("Sınavı Tamamla", type="primary")
         
         if submitted:
-            # Tüm soruların cevaplanıp cevaplanmadığını kontrol et (İsteğe bağlı)
-            if any(a is None for a in ans.values()):
-                st.warning("Lütfen tüm soruları cevaplayınız.")
-            else:
-                score = 0
-                mistakes = []
-                for i, item in enumerate(st.session_state['data']):
-                    q = item['soru_data']
-                    correct_option = q['dogru_sik'].strip()
-                    correct_answer_text = q[correct_option]
-                    
-                    # Seçilen cevap metni ile doğru cevap metnini karşılaştır
-                    if ans.get(i) == correct_answer_text:
-                        score += 1
-                    else:
-                        mistakes.append(i)
-                
-                st.session_state['scores']['pre'] = score
-                st.session_state['mistakes'] = mistakes
-                st.session_state['step'] = 3
-                st.rerun()
+            score = 0
+            mistakes = []
+            for i, item in enumerate(st.session_state['data']):
+                q = item['soru_data']
+                correct = q[q['dogru_sik'].strip()]
+                if ans.get(i) == correct: score += 1
+                else: mistakes.append(i)
+            
+            st.session_state['scores']['pre'] = score
+            st.session_state['mistakes'] = mistakes
+            st.session_state['step'] = 3
+            st.rerun()
 
-# --- ADIM 3: ÇALIŞMA ---
+# --- ADIM 3: ÇALIŞMA PLANI ---
 elif st.session_state['step'] == 3:
-    st.header("📝 Kişiselleştirilmiş Çalışma Planı")
+    st.markdown(f"""
+    <div style='text-align:center; padding: 20px;'>
+        <h2 style='color:#2c3e50;'>Kişiselleştirilmiş Çalışma Planı</h2>
+        <p style='font-size:1.2rem;'>Ön Test Puanı: <strong>{st.session_state['scores']['pre']} / {len(st.session_state['data'])}</strong></p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    col1, col2 = st.columns([1, 3])
+    col1, col2, col3 = st.columns(3)
+    
     with col1:
-        st.metric("Ön Test Puanın", f"{st.session_state['scores']['pre']} / {len(st.session_state['data'])}")
-    
+        if st.session_state['mistakes']:
+            # PDF 1: Sadece Özet
+            pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
+            st.download_button("📄 Özet Raporu İndir", pdf_ozet, "Ozet_Calisma_Plani.pdf", "application/pdf", use_container_width=True)
+            
     with col2:
         if st.session_state['mistakes']:
-            st.warning(f"Toplam **{len(st.session_state['mistakes'])}** konuda eksiğin tespit edildi. Aşağıdaki çalışma planını dikkatlice incele.")
-        else:
-            st.balloons()
-            st.success("Tebrikler! Hiç eksiğin yok. Konuları tekrar ederek bilgilerini pekiştirebilirsin.")
+            # PDF 2: Geniş (Ek Kaynaklı)
+            pdf_genis = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
+            st.download_button("📑 Detaylı Akademik Rapor İndir", pdf_genis, "Detayli_Calisma_Plani.pdf", "application/pdf", type="primary", use_container_width=True)
 
-    st.markdown("---")
-    
-    col_pdf1, col_pdf2, col_next = st.columns([1.5, 1.5, 1])
-    
-    with col_pdf1:
-        if st.session_state['mistakes']:
-            # Sadece Özet PDF
-            pdf_data_summary = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
-            st.download_button("📄 Planı İndir (Sadece Özet)", pdf_data_summary, "Calisma_Plani_Ozet.pdf", "application/pdf", type="secondary")
-            
-    with col_pdf2:
-        if st.session_state['mistakes']:
-            # Geniş Özet (Ek Kaynaklı) PDF
-            pdf_data_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
-            st.download_button("📑 Planı İndir (Geniş Özet)", pdf_data_full, "Calisma_Plani_Genis.pdf", "application/pdf", type="primary")
-
-    with col_next:
-        if st.button("➡️ Son Sınava Geç", type="primary"):
+    with col3:
+        if st.button("Son Sınava Geç ➡️", type="primary", use_container_width=True):
             st.session_state['step'] = 4
             st.rerun()
 
     st.markdown("---")
     
-    col_s1, col_s2 = st.columns([1, 4])
-    with col_s1: st.markdown("### 🎚️ Okuma Hızı:")
-    with col_s2: 
-        audio_speed = st.select_slider("", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, format_func=lambda x: f"{x}x")
-    st.divider()
-
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
-        card_class = "study-card-error" if is_wrong else "study-card-success"
-        card_status = "TEKRAR ET" if is_wrong else "TAMAMLANDI"
-        card_icon = "🔻" if is_wrong else "✅"
+        status_class = "error" if is_wrong else "success"
+        icon = "⚠️" if is_wrong else "✅"
+        status_text = "Eksik Konu - Tekrar Gerekli" if is_wrong else "Konu Anlaşıldı"
         
         st.markdown(f"""
-        <div class="study-card {card_class}">
-            <div class="study-card-header">
-                {card_icon} {item['alt_baslik']} - [{card_status}]
+        <div class="topic-box">
+            <div class="topic-header {status_class}">
+                <span>{icon}</span>
+                <span style="flex-grow:1;">{item['alt_baslik']}</span>
+                <span style="font-size:0.8rem; opacity:0.8;">{status_text}</span>
             </div>
-            <div class="study-card-body">
+            <div class="topic-content">
                 {item['ozet']}
-            </div>
-        </div>
         """, unsafe_allow_html=True)
         
-        col_btns = st.columns([1, 4])
-        with col_btns[0]:
-             if st.button(f"🔊 Özeti Dinle", key=f"dinle_{i}"):
-                with st.spinner("Seslendiriliyor..."):
-                    path = generate_audio_openai(item['ozet'], audio_speed)
-                    if path: st.audio(path)
-        
-        ek_bilgi = item.get('ek_bilgi')
-        if ek_bilgi and is_wrong: # Sadece hatalı konularda ek bilgiyi göster
+        # Ek Bilgi Kısmı (Sadece Hatalıysa veya gösterilmek isteniyorsa)
+        if is_wrong and item.get('ek_bilgi'):
             st.markdown(f"""
-            <div class="extra-resource-box">
-                <div class="extra-resource-title">📚 Akademik Ek Kaynak</div>
-                <div>{ek_bilgi}</div>
-            </div>
+                <div class="extra-source">
+                    <strong>📚 Akademik Ek Kaynak:</strong><br>
+                    {item['ek_bilgi']}
+                </div>
             """, unsafe_allow_html=True)
             
-            if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
-                 with st.spinner("Okunuyor..."):
-                    path = generate_audio_openai(ek_bilgi, audio_speed)
-                    if path: st.audio(path)
+        st.markdown("</div></div>", unsafe_allow_html=True)
 
-        st.markdown("---")
-
-# --- ADIM 4: SON TEST ---
+# --- ADIM 4: SON SINAV ---
 elif st.session_state['step'] == 4:
-    st.header("🎯 Son Sınav")
-    st.info("Artık öğrendiklerini test etme zamanı. Başarılar!")
-
+    st.markdown("<h2 style='text-align:center;'>Dönem Sonu Değerlendirme Sınavı</h2>", unsafe_allow_html=True)
+    
     with st.form("post_test_form"):
         ans = {}
         for i, item in enumerate(st.session_state['data']):
             q = item['soru_data']
-            
             st.markdown(f"""
-            <div class="question-card">
-                <div class="question-title">SORU {i+1}</div>
-                <div>{q['soru']}</div>
+            <div class="question-box">
+                <strong>SORU {i+1}:</strong> {q['soru']}
             </div>
             """, unsafe_allow_html=True)
-
-            ans[i] = st.radio(
-                "Cevabınızı Seçin:", 
-                [q['A'], q['B'], q['C'], q['D']], 
-                key=f"son_{i}",
-                index=None,
-                format_func=lambda x: f"{x}"
-            )
-            st.write("")
-
-        st.markdown("---")
-        submitted = st.form_submit_button("🏁 Sınavı Bitir", type="primary")
+            ans[i] = st.radio("Cevap:", [q['A'], q['B'], q['C'], q['D']], key=f"son_{i}", label_visibility="collapsed")
+            st.markdown("<br>", unsafe_allow_html=True)
         
-        if submitted:
-            if any(a is None for a in ans.values()):
-                 st.warning("Lütfen tüm soruları cevaplayınız.")
-            else:
-                score = 0
-                for i, item in enumerate(st.session_state['data']):
-                    q = item['soru_data']
-                    correct_option = q['dogru_sik'].strip()
-                    correct_answer_text = q[correct_option]
-                    
-                    if ans.get(i) == correct_answer_text:
-                        score += 1
-                
-                res = {
-                    "ad_soyad": st.session_state['student_info']['name'],
-                    "no": st.session_state['student_info']['no'],
-                    "tarih": time.strftime("%Y-%m-%d %H:%M"),
-                    "on_test": st.session_state['scores']['pre'],
-                    "son_test": score
-                }
-                if save_results_to_firebase(res):
-                    st.balloons()
-                    
-                    col1, col2, col3 = st.columns([1,2,1])
-                    with col2:
-                        st.success(f"Sınav Başarıyla Tamamlandı!")
-                        st.metric("Son Sınav Puanın", f"{score} / {len(st.session_state['data'])}", delta=score - st.session_state['scores']['pre'])
-                        st.markdown("Sonuçlarınız kaydedildi. Öğrenme yolculuğunuzda başarılar dileriz!")
+        if st.form_submit_button("Sınavı Bitir ve Kaydet", type="primary"):
+            score = 0
+            for i, item in enumerate(st.session_state['data']):
+                q = item['soru_data']
+                correct = q[q['dogru_sik'].strip()]
+                if ans.get(i) == correct: score += 1
+            
+            res = {
+                "ad_soyad": st.session_state['student_info']['name'],
+                "no": st.session_state['student_info']['no'],
+                "tarih": time.strftime("%Y-%m-%d %H:%M"),
+                "on_test": st.session_state['scores']['pre'],
+                "son_test": score
+            }
+            if save_results_to_firebase(res):
+                st.balloons()
+                st.markdown(f"""
+                <div class='stCard' style='text-align:center; background-color:#f0fdf4;'>
+                    <h1 style='color:#166534;'>🎉 Tebrikler!</h1>
+                    <h3>Son Sınav Puanı: {score} / {len(st.session_state['data'])}</h3>
+                    <p>Sonuçlarınız sisteme başarıyla kaydedildi.</p>
+                </div>
+                """, unsafe_allow_html=True)
