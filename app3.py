@@ -16,7 +16,7 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu (Cloud)", layout="wide")
+st.set_page_config(page_title="Gemini Eğitim Platformu (v2.5 Powered)", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
@@ -28,7 +28,6 @@ ADMIN_PASSWORD = st.secrets["admin_password"]
 if not firebase_admin._apps:
     try:
         key_dict = dict(st.secrets["firebase"])
-        # PEM hatasını önleyen satır
         key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
@@ -81,11 +80,23 @@ def get_class_data_from_firebase():
         data.append(doc.to_dict())
     return data
 
-# --- WHISPER & AI FONKSİYONLARI ---
+# --- YARDIMCI: PDF İÇİN KARAKTER DÜZELTİCİ ---
+def safe_text(text):
+    if text is None: return ""
+    tr_map = {
+        ord('ı'):'i', ord('İ'):'I', ord('ğ'):'g', ord('Ğ'):'G', 
+        ord('ü'):'u', ord('Ü'):'U', ord('ş'):'s', ord('Ş'):'S', 
+        ord('ö'):'o', ord('Ö'):'O', ord('ç'):'c', ord('Ç'):'C',
+        ord('•'):'-', ord('’'):"'" 
+    }
+    try:
+        return text.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+    except:
+        return text
 
+# --- WHISPER & AI FONKSİYONLARI ---
 @st.cache_resource
 def load_whisper():
-    # RAM dostu Tiny model + CPU modu
     return whisper.load_model("base", device="cpu")
 
 def sesi_sokup_al(video_path, audio_path):
@@ -97,38 +108,48 @@ def sesi_sokup_al(video_path, audio_path):
         return False
 
 def analyze_full_text_with_gemini(full_text):
-    # 🚀 GÜNCELLEME: En yeni ve güçlü model: Gemini 2.5 Flash
-    # Bu model daha hızlıdır, daha iyi anlar ve JSON hatası yapmaz.
-    model_name = "gemini-2.5-flash"
+    # 🔥 DOĞRU KONFİGÜRASYON: Önce Gemini 2.5 Flash dene
+    # Eğer API hatası olursa 1.5'e düş (Akıllı Yedekleme)
     
+    primary_model = "gemini-2.5-flash"
+    fallback_model = "gemini-1.5-flash"
+    
+    model = None
     try:
-        model = genai.GenerativeModel(model_name)
-    except Exception as e:
-        # Eğer 2.5'te geçici bir sorun varsa 2.0'a düşer (Yedek Plan)
-        st.warning(f"Gemini 2.5 yüklenemedi, 1.5 deneniyor... Hata: {e}")
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Önce en yeni 2.5 modelini deniyoruz
+        model = genai.GenerativeModel(primary_model)
+        # Test çağrısı (Modelin yüklendiğinden emin olmak için)
+        model.generate_content("test") 
+    except:
+        # Hata alırsak 1.5'e geçiyoruz
+        st.warning(f"⚠️ {primary_model} yoğunluk nedeniyle yanıt vermedi, {fallback_model} devreye alındı.")
+        model = genai.GenerativeModel(fallback_model)
 
-    # DEBUG: Whisper ne duydu?
     st.info(f"🕵️ DEBUG: Whisper {len(full_text)} karakterlik metin çıkardı.")
     
     if len(full_text) < 50:
-        st.warning(f"⚠️ Metin çok kısa, ses anlaşılmamış olabilir. Metin: '{full_text}'")
+        st.warning(f"⚠️ Metin çok kısa.")
         return []
 
-    prompt = f"""GÖREV: Aşağıdaki metni eğitim materyaline dönüştür. 
-    Çıktı SADECE geçerli bir JSON formatında olmalı. Ekstra yazı yazma.
+    # PROMPT: Hem Özet Hem Ek Kaynak İstiyoruz
+    prompt = f"""
+    Sen uzman bir öğretmensin. Aşağıdaki video transkriptini analiz et.
     
-    İstenen JSON Yapısı:
+    GÖREVLERİN:
+    1. Konuyu mantıklı alt başlıklara böl.
+    2. Her başlık için videodan bir ÖZET çıkar.
+    3. [ÖNEMLİ] Her başlık için, videoda olmasa bile kendi veritabanından derinlemesine AKADEMİK EK BİLGİ ekle.
+    4. Her başlık için çoktan seçmeli bir soru hazırla.
+
+    Çıktı SADECE geçerli bir JSON formatında olmalı:
     [
       {{
         "alt_baslik": "Konu Başlığı",
-        "ozet": "Kısa özet.",
+        "ozet": "Konunun özeti buraya.",
+        "ek_bilgi": "Konuyla ilgili ekstra akademik detay veya ilginç bilgi.",
         "soru_data": {{
             "soru": "Soru metni?",
-            "A": "Cevap A",
-            "B": "Cevap B",
-            "C": "Cevap C",
-            "D": "Cevap D",
+            "A": "...", "B": "...", "C": "...", "D": "...",
             "dogru_sik": "A"
         }}
       }}
@@ -139,13 +160,12 @@ def analyze_full_text_with_gemini(full_text):
     try:
         response = model.generate_content(prompt)
         text = response.text
-        # Temizlik
         text = text.replace("```json", "").replace("```", "").strip()
         start = text.find('[')
         end = text.rfind(']') + 1
         return json.loads(text[start:end])
     except Exception as e:
-        st.error(f"🚨 GEMINI HATASI ({model_name}): {e}")
+        st.error(f"🚨 GEMINI HATASI: {e}")
         return []
 
 def generate_audio_openai(text, speed):
@@ -158,31 +178,56 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- PDF FONKSİYONU ---
+# --- GELİŞMİŞ PDF FONKSİYONU ---
 def create_study_pdf(data, mistakes):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "CALISMA PLANI", ln=1, align='C')
     
-    pdf.set_font("Arial", '', 12)
-    for i in mistakes:
-        item = data[i]
-        baslik = item.get('alt_baslik', 'Konu').encode('latin-1', 'replace').decode('latin-1')
-        ozet = item.get('ozet', '').encode('latin-1', 'replace').decode('latin-1')
+    # Başlık
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 15, "KISISELLESTIRILMIS CALISMA PLANI", ln=1, align='C')
+    pdf.ln(5)
+    
+    for i, item in enumerate(data):
+        baslik = safe_text(item.get('alt_baslik', 'Konu'))
+        ozet = safe_text(item.get('ozet', ''))
+        ek_bilgi = safe_text(item.get('ek_bilgi', ''))
         
-        pdf.ln(10)
-        pdf.set_font("Arial", 'B', 14)
-        pdf.multi_cell(0, 10, f"KONU: {baslik}")
-        pdf.set_font("Arial", '', 12)
-        pdf.multi_cell(0, 10, ozet)
+        # Hata kontrolü ve Renklendirme
+        if i in mistakes:
+            # HATA VARSA KIRMIZI
+            pdf.set_text_color(200, 0, 0)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, f"(!) {baslik} - [TEKRAR ET]", ln=1)
+        else:
+            # DOĞRUYSA YEŞİL
+            pdf.set_text_color(0, 100, 0)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, f"{baslik} (Tamamlandi)", ln=1)
+        
+        # İçerik
+        pdf.set_text_color(0)
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 6, ozet)
+        pdf.ln(2)
+        
+        # Ek Bilgi (Gri ve İtalik)
+        if ek_bilgi:
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_font("Arial", 'I', 10)
+            pdf.multi_cell(0, 6, f"[EK KAYNAK]: {ek_bilgi}")
+            pdf.ln(2)
+            
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(5)
         
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ================= ARAYÜZ =================
 
-st.title("☁️ Gemini Eğitim Platformu (Online)")
+st.title("☁️ Gemini 2.5 Eğitim Platformu (Cloud)")
 
 LESSON_FILE = "lesson_data.json"
 
@@ -235,31 +280,29 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
         up = st.file_uploader("Ders Videosu Seç (.mp4)", type=["mp4"])
         
         if up and st.button("Videoyu İşle ve Yayına Al"):
-            with st.spinner("Video işleniyor..."):
+            with st.spinner("Video işleniyor... (Bu işlem biraz sürebilir)"):
                 try:
                     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
                     tfile.write(up.read())
                     
                     audio_path = tfile.name.replace(".mp4", ".mp3")
                     
-                    # 1. Ses Ayırma
                     if not sesi_sokup_al(tfile.name, audio_path):
                         st.error("FFMPEG Hatası.")
                         st.stop()
                     
-                    # 2. Transkripsiyon
                     model_w = load_whisper()
                     result = model_w.transcribe(audio_path)
                     full_text = result['text']
                     
-                    # 3. Gemini Analiz (Standart Model)
+                    # Gemini 2.5 ile Analiz
                     analysis = analyze_full_text_with_gemini(full_text)
                     
                     if analysis and len(analysis) > 0:
                         with open(LESSON_FILE, 'w', encoding='utf-8') as f:
                             json.dump(analysis, f, ensure_ascii=False)
                         st.session_state['data'] = analysis
-                        st.success("✅ Ders başarıyla işlendi!")
+                        st.success("✅ Ders (Gemini 2.5 ile) başarıyla işlendi!")
                     else:
                         st.error("Gemini analizi başarısız oldu.")
                 except Exception as e:
@@ -308,15 +351,18 @@ elif st.session_state['step'] == 2:
 # --- ADIM 3: ÇALIŞMA ---
 elif st.session_state['step'] == 3:
     st.success(f"Puanın: {st.session_state['scores']['pre']}")
+    
+    # PDF Butonu
     if st.session_state['mistakes']:
-        if st.button("📄 PDF İndir"):
+        if st.button("📄 Gelişmiş PDF İndir"):
             pdf_bytes = create_study_pdf(st.session_state['data'], st.session_state['mistakes'])
-            st.download_button("İndir", pdf_bytes, "calisma.pdf", "application/pdf")
+            st.download_button("İndir", pdf_bytes, "Ozel_Calisma_Plani.pdf", "application/pdf")
 
     if st.button("Son Sınava Geç ->"):
         st.session_state['step'] = 4
         st.rerun()
     
+    # --- SES HIZI KONTROLÜ ---
     st.divider()
     col_s1, col_s2 = st.columns([1, 3])
     with col_s1:
@@ -335,10 +381,22 @@ elif st.session_state['step'] == 3:
             st.error(f"Eksik: {item.get('alt_baslik')}")
             st.write(item.get('ozet'))
             
-            if st.button("🔊 Dinle", key=f"ls_{i}"):
+            # EK BİLGİ ALANI
+            extra = item.get('ek_bilgi')
+            if extra:
+                with st.expander("📚 Akademik/Ek Kaynak Bilgisi"):
+                    st.info(extra)
+                    if st.button("🎧 Ek Bilgiyi Dinle", key=f"ex_aud_{i}"):
+                        with st.spinner(f"Ek bilgi okunuyor ({audio_speed}x)..."):
+                            path_ex = generate_audio_openai(extra, audio_speed)
+                            if path_ex: st.audio(path_ex)
+            
+            # ANA ÖZETİ DİNLEME BUTONU
+            if st.button("🔊 Özeti Dinle", key=f"ls_{i}"):
                 with st.spinner(f"Seslendiriliyor ({audio_speed}x Hız)..."):
                     path = generate_audio_openai(item.get('ozet'), audio_speed)
                     if path: st.audio(path)
+            st.markdown("---")
 
 # --- ADIM 4: SON TEST ---
 elif st.session_state['step'] == 4:
@@ -367,6 +425,3 @@ elif st.session_state['step'] == 4:
             save_results_to_firebase(final_data)
             st.balloons()
             st.success(f"Bitti! Puan: {score}")
-
-
-
