@@ -22,7 +22,6 @@ nest_asyncio.apply()
 
 # =============================================================================
 # --- CSS VE TASARIM ENTEGRASYONU ---
-# (Senin gönderdiğin font ailesini CDN üzerinden çekip uyguluyoruz)
 # =============================================================================
 st.markdown("""
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
@@ -31,7 +30,7 @@ st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
 
 <style>
-    /* 1. GLOBAL FONT AYARLARI (Senin CSS'ine uygun) */
+    /* 1. GLOBAL FONT AYARLARI */
     html, body, [class*="css"] {
         font-family: 'Source Sans 3', sans-serif;
         color: #2c3e50;
@@ -119,7 +118,7 @@ st.markdown("""
         color: #374151;
     }
     
-    /* Ek Kaynak Kutusu - Akademik Görünüm */
+    /* Ek Kaynak Kutusu */
     .extra-source {
         margin-top: 15px;
         padding: 15px;
@@ -369,11 +368,12 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- GELİŞMİŞ PDF TASARIMI (İSTEĞİNE UYGUN) ---
+# --- GELİŞMİŞ PDF TASARIMI ---
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 10)
         self.set_text_color(150, 150, 150)
+        # BURADA HATA YOKTU, ÇÜNKÜ POSITIONAL ARGUMENT SIRASI DOĞRU
         self.cell(0, 10, safe_text('Gemini Egitim Platformu | Kisisel Calisma Plani'), 0, 1, 'R')
         self.ln(5)
 
@@ -384,7 +384,7 @@ class PDF(FPDF):
         self.cell(0, 10, safe_text('Sayfa ') + str(self.page_no()), 0, 0, 'C')
 
     def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
-        # Renk Paleti (CSS'e uyumlu)
+        # Renk Paleti
         if is_mistake:
             header_fill = (254, 242, 242) # Açık Kırmızı
             header_text = (153, 27, 27)   # Koyu Kırmızı
@@ -396,76 +396,70 @@ class PDF(FPDF):
             border_col = (134, 239, 172)  # Kenarlık Yeşil
             status_text = "TAMAMLANDI"
 
-        # Kutu Çizimi
         self.set_draw_color(*border_col)
         self.set_line_width(0.3)
         
-        # Başlık Arka Planı
         self.set_fill_color(*header_fill)
         self.set_text_color(*header_text)
         self.set_font('Arial', 'B', 11)
         
-        # X ve Y koordinatlarını sakla
         x = self.get_x()
-        y = self.get_y()
         
         # Başlık Hücresi
         title_full = f"{status_text}: {safe_text(title)}"
         self.cell(0, 10, title_full, 1, 1, 'L', True)
         
-        # İçerik Alanı (Kenarlıklar için)
         content_start_y = self.get_y()
         
         # Özet Metni
         self.set_text_color(50, 50, 50)
         self.set_font('Arial', '', 10)
-        self.set_xy(x + 2, content_start_y + 3) # Biraz içeriden başla
+        self.set_xy(x + 2, content_start_y + 3)
         self.multi_cell(0, 5, safe_text(summary))
         
-        # Ek Kaynak (Eğer isteniyorsa ve varsa)
+        # Ek Kaynak
         if include_extra and extra_info:
             self.ln(3)
-            # Ayırıcı çizgi
             line_y = self.get_y()
             self.set_draw_color(220, 220, 220)
             self.line(x + 2, line_y, 200, line_y)
             self.ln(3)
             
-            # Ek Bilgi Başlığı
             self.set_font('Arial', 'BI', 9)
             self.set_text_color(80, 80, 80)
             self.cell(0, 5, safe_text("Akademik Not / Ek Kaynak:"), 0, 1)
             
-            # Ek Bilgi Metni
             self.set_font('Arial', 'I', 9)
             self.multi_cell(0, 5, safe_text(extra_info))
         
-        # Alt boşluk ve kutu kapama
         self.ln(3)
         content_end_y = self.get_y()
         
-        # Kutunun dış çerçevesini çiz (Başlıktan aşağıya kadar)
+        # Dış çerçeve
         self.set_draw_color(*border_col)
         self.set_xy(x, content_start_y)
         self.rect(x, content_start_y, 190, content_end_y - content_start_y)
         
-        self.set_y(content_end_y + 6) # Bir sonraki kutu için boşluk
+        self.set_y(content_end_y + 6)
 
 def create_study_pdf(data, mistakes, include_extra=True):
     pdf = PDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
     
-    # Ana Başlık
+    # Ana Başlık - HATA BURADAYDI, DÜZELTİLDİ
     pdf.set_font("Arial", 'B', 22)
     pdf.set_text_color(33, 37, 41)
-    pdf.cell(0, 15, safe_text("CALISMA PLANI RAPORU"), ln=1, 'C')
+    # align='C' olarak düzeltildi
+    pdf.cell(0, 15, safe_text("CALISMA PLANI RAPORU"), ln=1, align='C') 
     
-    # Alt Bilgi
+    # Alt Bilgi - HATA BURADAYDI, DÜZELTİLDİ
     pdf.set_font("Arial", '', 12)
     pdf.set_text_color(100, 100, 100)
     type_str = "Detayli Akademik Rapor" if include_extra else "Ozet Konu Anlatimi"
-    pdf.cell(0, 8, safe_text(f"Rapor Turu: {type_str}"), ln=1, 'C')
+    # align='C' olarak düzeltildi
+    pdf.cell(0, 8, safe_text(f"Rapor Turu: {type_str}"), ln=1, align='C')
+    
     pdf.ln(10)
     
     for i, item in enumerate(data):
@@ -670,7 +664,7 @@ elif st.session_state['step'] == 3:
                 {item['ozet']}
         """, unsafe_allow_html=True)
         
-        # Ek Bilgi Kısmı (Sadece Hatalıysa veya gösterilmek isteniyorsa)
+        # Ek Bilgi Kısmı
         if is_wrong and item.get('ek_bilgi'):
             st.markdown(f"""
                 <div class="extra-source">
