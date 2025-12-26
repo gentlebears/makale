@@ -317,13 +317,28 @@ elif st.session_state['step'] == 3:
         st.session_state['step'] = 4
         st.rerun()
     
+    st.divider()
+    col_s1, col_s2 = st.columns([1, 3])
+    with col_s1:
+        st.info("🎚️ **Ses Hızı**")
+    with col_s2:
+        audio_speed = st.select_slider(
+            "Yapay Zeka Okuma Hızı:", 
+            options=[0.75, 1.0, 1.25, 1.5, 2.0], 
+            value=1.0,
+            key="speed_slider"
+        )
+    st.divider()
+
     for i, item in enumerate(st.session_state['data']):
         if i in st.session_state['mistakes']:
             st.error(f"Eksik: {item.get('alt_baslik')}")
             st.write(item.get('ozet'))
+            
             if st.button("🔊 Dinle", key=f"ls_{i}"):
-                path = generate_audio_openai(item.get('ozet'), 1.0)
-                if path: st.audio(path)
+                with st.spinner(f"Seslendiriliyor ({audio_speed}x Hız)..."):
+                    path = generate_audio_openai(item.get('ozet'), audio_speed)
+                    if path: st.audio(path)
 
 # --- ADIM 4: SON TEST ---
 elif st.session_state['step'] == 4:
@@ -352,5 +367,6 @@ elif st.session_state['step'] == 4:
             save_results_to_firebase(final_data)
             st.balloons()
             st.success(f"Bitti! Puan: {score}")
+
 
 
