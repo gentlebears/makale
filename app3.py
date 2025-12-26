@@ -110,6 +110,7 @@ def format_data_for_csv(df, soru_sayisi_input=None):
 
 # --- FONKSİYONLAR ---
 def download_font():
+    # Türkçe karakter destekleyen DejaVuSans fontunu indir
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
         try:
@@ -166,21 +167,27 @@ def generate_audio_openai(text, speed):
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
+        # Fontu yükle (Türkçe karakterler için)
         self.font_path = download_font()
         self.add_font('DejaVu', '', self.font_path, uni=True)
+
     def header(self):
         self.set_font('DejaVu', '', 14)
         self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C'); self.ln(5)
+
     def topic_section(self, title, summary, extra, mistake, include_extra):
         if mistake:
             self.set_text_color(200, 0, 0); title = f"(!) {title} - [TEKRAR ET]"
         else:
             self.set_text_color(0, 100, 0); title = f"{title} (Tamamlandı)"
+        
         self.set_font('DejaVu', '', 12); self.cell(0, 10, title, ln=1)
         self.set_text_color(0); self.set_font('DejaVu', '', 10); self.multi_cell(0, 6, summary); self.ln(2)
+        
         if include_extra and extra:
             self.set_text_color(80); self.set_font('DejaVu', '', 9)
             self.multi_cell(0, 6, f"[EK KAYNAK]: {extra}"); self.ln(2)
+        
         self.set_draw_color(200); self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
 
 def create_pdf(data, mistakes, extra=True):
@@ -198,11 +205,6 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
     try: 
         with open(LESSON_FILE,'r',encoding='utf-8') as f: st.session_state['data'] = json.load(f)
     except: pass
-
-# --- SIDEBAR (HIZ) ---
-with st.sidebar:
-    st.header("Ayarlar")
-    st.session_state['audio_speed'] = st.select_slider("Ses Hızı:", [0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
 
 # --- SAYFALAR ---
 if st.session_state['step'] == 0:
@@ -261,53 +263,72 @@ elif st.session_state['step'] == 2:
 elif st.session_state['step'] == 3:
     st.success(f"Puanın: {st.session_state['scores']['pre']}")
     
-    # --- PDF BUTONLARI VE GEÇİŞ (Tek Satır) ---
+    # =========================================================
+    # --- ARAÇ ÇUBUĞU (PDFLER + HIZ AYARI + İLERLEME) ---
+    # =========================================================
+    
     if st.session_state['mistakes']:
-        st.warning("Eksiklerini aşağıda incele.")
-        c1, c2, c3 = st.columns(3)
+        st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Çalışma planını indir.")
+        
+        # 4 Sütunlu Yapı: [Özet PDF] [Detaylı PDF] [Hız Ayarı] [Devam Butonu]
+        c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
+        
         with c1:
             pdf1 = create_pdf(st.session_state['data'], st.session_state['mistakes'], False)
-            st.download_button("📄 Özet PDF", pdf1, "Ozet.pdf", "application/pdf", use_container_width=True)
+            st.download_button("📥 Özet", pdf1, "Ozet.pdf", "application/pdf", use_container_width=True)
+            
         with c2:
             pdf2 = create_pdf(st.session_state['data'], st.session_state['mistakes'], True)
-            st.download_button("📑 Detaylı PDF", pdf2, "Detayli.pdf", "application/pdf", use_container_width=True)
+            st.download_button("📑 Detaylı", pdf2, "Detayli.pdf", "application/pdf", use_container_width=True)
+            
         with c3:
-            if st.button("Son Sınava Geç ➡️", use_container_width=True):
+            # Hız ayarını buraya gömdük
+            speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
+            st.session_state['audio_speed'] = speed_val
+            
+        with c4:
+            if st.button("➡️ Devam", use_container_width=True):
                 st.session_state['step'] = 4; st.rerun()
+
     else:
         st.balloons(); st.success("Harika! Eksiğin yok.")
-        if st.button("Son Sınava Geç"): st.session_state['step'] = 4; st.rerun()
+        # Eksiği yoksa sadece Hız ve Devam Butonu gösterelim
+        c1, c2 = st.columns([2, 1])
+        with c1:
+             speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
+             st.session_state['audio_speed'] = speed_val
+        with c2:
+             if st.button("➡️ Devam", use_container_width=True): 
+                 st.session_state['step'] = 4; st.rerun()
     
     st.divider()
 
-    # --- KONU KARTLARI VE GÖMÜLÜ SES ---
+    # --- KONU KARTLARI VE GÖMÜLÜ SES BUTONLARI ---
     for i, item in enumerate(st.session_state['data']):
         wrong = i in st.session_state['mistakes']
-        
-        # Hata varsa Kırmızı (Error), Yoksa Yeşil (Success) kutu
         box = st.error if wrong else st.success
         
         with box(f"{'🔻' if wrong else '✅'} {item['alt_baslik']}"):
-            # 1. ÖZET KISMI (Metin ve Ses Yan Yana)
-            col_txt, col_btn = st.columns([8, 1])
+            
+            # --- ÖZET ---
+            col_txt, col_btn = st.columns([9, 1])
             with col_txt:
                 st.write(f"**Özet:** {item['ozet']}")
             with col_btn:
-                # Buton simgesi
+                # Küçük, şık bir buton
                 if st.button("🔊", key=f"d_{i}", help="Özeti Dinle"):
-                    # Oynatıcıyı metnin altına açmak için
                     with st.spinner(".."):
                         p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
                         if p: st.audio(p)
 
-            # 2. EK BİLGİ KISMI (Sadece yanlışsa)
+            # --- EK BİLGİ (Varsa ve Yanlışsa) ---
             if wrong and item.get('ek_bilgi'):
                 st.markdown("---")
-                col_ek_txt, col_ek_btn = st.columns([8, 1])
+                col_ek_txt, col_ek_btn = st.columns([9, 1])
                 with col_ek_txt:
                     st.info(f"📚 **Ek Bilgi:** {item['ek_bilgi']}")
                 with col_ek_btn:
-                    if st.button("🎧", key=f"ed_{i}", help="Ek Bilgiyi Dinle"):
+                     if st.button("🎧", key=f"ed_{i}", help="Ek Bilgiyi Dinle"):
                         with st.spinner(".."):
                             p = generate_audio_openai(item['ek_bilgi'], st.session_state['audio_speed'])
                             if p: st.audio(p)
