@@ -97,18 +97,22 @@ def sesi_sokup_al(video_path, audio_path):
         return False
 
 def analyze_full_text_with_gemini(full_text):
-    # DEĞİŞİKLİK BURADA: En güvenli ve standart model olan 'gemini-pro'ya geçtik.
-    try:
-        model = genai.GenerativeModel('gemini-pro')
-    except:
-        # Alternatif isim denemesi
-        model = genai.GenerativeModel('models/gemini-pro')
+    # 🚀 GÜNCELLEME: En yeni ve güçlü model: Gemini 2.5 Flash
+    # Bu model daha hızlıdır, daha iyi anlar ve JSON hatası yapmaz.
+    model_name = "gemini-2.5-flash"
     
-    # DEBUG: Whisper'ın çalıştığını görmek için (Mavi kutu)
+    try:
+        model = genai.GenerativeModel(model_name)
+    except Exception as e:
+        # Eğer 2.5'te geçici bir sorun varsa 2.0'a düşer (Yedek Plan)
+        st.warning(f"Gemini 2.5 yüklenemedi, 1.5 deneniyor... Hata: {e}")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+    # DEBUG: Whisper ne duydu?
     st.info(f"🕵️ DEBUG: Whisper {len(full_text)} karakterlik metin çıkardı.")
     
     if len(full_text) < 50:
-        st.warning(f"⚠️ UYARI: Metin çok kısa, video sesini kontrol edin. Metin: '{full_text}'")
+        st.warning(f"⚠️ Metin çok kısa, ses anlaşılmamış olabilir. Metin: '{full_text}'")
         return []
 
     prompt = f"""GÖREV: Aşağıdaki metni eğitim materyaline dönüştür. 
@@ -141,7 +145,7 @@ def analyze_full_text_with_gemini(full_text):
         end = text.rfind(']') + 1
         return json.loads(text[start:end])
     except Exception as e:
-        st.error(f"🚨 GEMINI HATASI: {e}")
+        st.error(f"🚨 GEMINI HATASI ({model_name}): {e}")
         return []
 
 def generate_audio_openai(text, speed):
@@ -348,3 +352,4 @@ elif st.session_state['step'] == 4:
             save_results_to_firebase(final_data)
             st.balloons()
             st.success(f"Bitti! Puan: {score}")
+
