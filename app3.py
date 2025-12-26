@@ -11,6 +11,7 @@ import nest_asyncio
 import pandas as pd
 import numpy as np
 import time
+import requests # Font indirmek için gerekli
 import firebase_admin
 from firebase_admin import credentials, firestore
 from fpdf import FPDF
@@ -100,7 +101,6 @@ def get_class_data_from_firebase():
 
 # --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
-    # 1. Puanları Birleştir
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
     elif 'on_test' in df.columns:
@@ -119,21 +119,16 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     else:
         df['2. Test Doğru Sayısı'] = 0
 
-    # 2. None (Boş) Olanları 0 Yap
     df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
     df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
-
-    # 3. NET Hesapla
     df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
 
-    # 4. İsimlendirmeleri Ayarla
     if 'ad_soyad' in df.columns: df['Ad Soyad'] = df['ad_soyad']
     else: df['Ad Soyad'] = "Bilinmiyor"
         
     if 'no' in df.columns: df['Öğrenci No'] = df['no']
     else: df['Öğrenci No'] = 0
 
-    # 5. Soru Sayısını Ayarla
     final_count = soru_sayisi_input if soru_sayisi_input and soru_sayisi_input > 0 else 15
     df['Soru Sayısı'] = final_count
 
@@ -146,18 +141,23 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     return df[target_columns]
 
 # --- YARDIMCI FONKSİYONLAR ---
+# Font İndirme Fonksiyonu (Türkçe Karakter İçin)
+def download_font():
+    font_url = "https://github.com/google/fonts/raw/main/ofl/dejavusans/DejaVuSans.ttf"
+    font_path = "DejaVuSans.ttf"
+    if not os.path.exists(font_path):
+        try:
+            response = requests.get(font_url)
+            with open(font_path, "wb") as f:
+                f.write(response.content)
+        except:
+            pass
+    return font_path
+
+# safe_text artık karakterleri bozmuyor, sadece PDF için string temizliyor
 def safe_text(text):
     if text is None: return ""
-    tr_map = {
-        ord('ı'):'i', ord('İ'):'I', ord('ğ'):'g', ord('Ğ'):'G', 
-        ord('ü'):'u', ord('Ü'):'U', ord('ş'):'s', ord('Ş'):'S', 
-        ord('ö'):'o', ord('Ö'):'O', ord('ç'):'c', ord('Ç'):'C',
-        ord('’'):"'", '‘':"'", '“':'"', '”':'"', '–':'-'
-    }
-    try:
-        return text.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-    except:
-        return text
+    return str(text)
 
 @st.cache_resource
 def load_whisper():
@@ -174,7 +174,6 @@ def sesi_sokup_al(video_path, audio_path):
 def analyze_full_text_with_gemini(full_text):
     primary_model = "gemini-2.5-flash"
     fallback_model = "gemini-2.0-flash"
-    
     model = None
     try:
         model = genai.GenerativeModel(primary_model)
@@ -187,13 +186,11 @@ def analyze_full_text_with_gemini(full_text):
 
     prompt = f"""
     Sen uzman bir eğitim asistanısın. Video transkriptini analiz et.
-    
     GÖREVLER:
     1. Konuyu alt başlıklara böl.
     2. Her başlık için video içeriğinden bir ÖZET çıkar.
     3. [KRİTİK] Her başlık için, videoda geçmese bile, o konuyu akademik olarak destekleyen EK BİLGİ (Extra Resource) ekle.
     4. Her başlık için bir test sorusu yaz.
-
     Çıktı JSON Formatı:
     [
       {{
@@ -229,33 +226,43 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- PDF OLUŞTURUCU ---
+# --- PDF OLUŞTURUCU (TÜRKÇE KARAKTER DESTEKLİ) ---
 class PDF(FPDF):
+    def __init__(self):
+        super().__init__()
+        # Türkçe Fontu Yükle ve Kaydet
+        self.font_path = download_font()
+        # 'uni=True' parametresi FPDF'e unicode kullanacağını söyler
+        self.add_font('DejaVu', '', self.font_path, uni=True)
+
     def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'Kisisellestirilmis Calisma Plani', 0, 1, 'C')
+        self.set_font('DejaVu', '', 14)
+        self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C')
         self.ln(5)
 
     def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
+        # Başlık Rengi
         if is_mistake:
-            self.set_text_color(200, 0, 0)
+            self.set_text_color(200, 0, 0) # Kırmızı
             title = f"(!) {title} - [TEKRAR ET]"
         else:
-            self.set_text_color(0, 100, 0)
-            title = f"{title} (Tamamlandi)"
+            self.set_text_color(0, 100, 0) # Yeşil
+            title = f"{title} (Tamamlandı)"
             
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, safe_text(title), ln=1)
+        self.set_font('DejaVu', '', 12)
+        self.cell(0, 10, title, ln=1)
         
+        # İçerik
         self.set_text_color(0)
-        self.set_font('Arial', '', 11)
-        self.multi_cell(0, 6, safe_text(summary))
+        self.set_font('DejaVu', '', 10)
+        self.multi_cell(0, 6, summary)
         self.ln(2)
         
+        # Ek Bilgi (Opsiyonel)
         if include_extra and extra_info:
             self.set_text_color(80, 80, 80)
-            self.set_font('Arial', 'I', 10)
-            self.multi_cell(0, 6, safe_text(f"[EK KAYNAK]: {extra_info}"))
+            self.set_font('DejaVu', '', 9)
+            self.multi_cell(0, 6, f"[EK KAYNAK]: {extra_info}")
             self.ln(2)
             
         self.set_draw_color(200, 200, 200)
@@ -267,10 +274,11 @@ def create_study_pdf(data, mistakes, include_extra=True):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    pdf.set_font("Arial", 'I', 10)
+    # Rapor Türü Bilgisi
+    pdf.set_font("DejaVu", '', 10)
     pdf.set_text_color(100, 100, 100)
-    type_str = "Detayli Rapor (Ek Kaynakli)" if include_extra else "Ozet Rapor"
-    pdf.cell(0, 10, safe_text(f"Rapor Turu: {type_str}"), ln=1, align='C')
+    type_str = "Detaylı Rapor (Ek Kaynaklı)" if include_extra else "Özet Rapor"
+    pdf.cell(0, 10, f"Rapor Türü: {type_str}", ln=1, align='C')
     pdf.ln(5)
     
     for i, item in enumerate(data):
@@ -281,9 +289,9 @@ def create_study_pdf(data, mistakes, include_extra=True):
         
         pdf.topic_section(baslik, ozet, ek_bilgi, is_mistake, include_extra)
         
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    return pdf.output(dest='S').encode('latin-1', 'replace') # Unicode font olduğu için encode sorun yaratmaz
 
-# ================= ARAYÜZ (SADE VE 2 SEKMELİ ADMIN) =================
+# ================= ARAYÜZ =================
 
 st.title("☁️ Gemini Eğitim Platformu (Cloud v4 Stable)")
 
@@ -294,6 +302,13 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
         with open(LESSON_FILE, 'r', encoding='utf-8') as f:
             st.session_state['data'] = json.load(f)
     except: pass
+
+# --- SIDEBAR (HIZ AYARI BURAYA TAŞINDI) ---
+with st.sidebar:
+    st.header("⚙️ Ayarlar")
+    # Hız ayarını buraya aldık, ana ekranı temizledik
+    audio_speed = st.select_slider("Seslendirme Hızı:", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
+    st.session_state['audio_speed'] = audio_speed
 
 # --- GİRİŞ EKRANI ---
 if st.session_state['step'] == 0:
@@ -324,14 +339,11 @@ if st.session_state['step'] == 0:
                 st.rerun()
             else: st.error("Hatalı Şifre")
 
-# --- ADIM 1: YÖNETİCİ PANELİ (2 SEKMELİ) ---
+# --- ADIM 1: YÖNETİCİ PANELİ ---
 elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
     st.header("Yönetici Paneli")
-    
-    # İki sekme oluşturuyoruz: Video Yükleme ve Sonuçlar
     tab_upload, tab_results = st.tabs(["📚 Ders İşle / Video Yükle", "📊 Sınav Sonuçları"])
     
-    # 1. SEKME: VİDEO YÜKLEME
     with tab_upload:
         st.subheader("Yeni Ders İçeriği Yükle")
         up = st.file_uploader("Video (.mp4)", type=["mp4"])
@@ -356,27 +368,19 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                     else: st.error("Ses ayrıştırılamadı.")
                 except Exception as e: st.error(str(e))
     
-    # 2. SEKME: SINAV SONUÇLARI
     with tab_results:
         st.subheader("Öğrenci Sınav Sonuçları")
         if st.button("Sonuçları Gör / Yenile"):
             data_raw = get_class_data_from_firebase()
             if data_raw:
                 df_raw = pd.DataFrame(data_raw)
-                
-                # Dinamik Soru Sayısı ve Veri Düzeltme
                 mevcut_soru = len(st.session_state['data']) if st.session_state['data'] else 15
                 df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru)
                 
                 st.dataframe(df_clean, use_container_width=True)
                 
                 csv = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
-                st.download_button(
-                    label="📥 Tabloyu Excel (CSV) Olarak İndir",
-                    data=csv,
-                    file_name="ogrenci_sinav_sonuclari.csv",
-                    mime="text/csv"
-                )
+                st.download_button("📥 Tabloyu Excel (CSV) Olarak İndir", csv, "sonuclar.csv", "text/csv")
             else: 
                 st.info("Henüz veritabanında sonuç yok.")
 
@@ -412,30 +416,32 @@ elif st.session_state['step'] == 3:
     if st.session_state['mistakes']:
         st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var.")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            # Sadece Özet İndir
+        # --- BUTONLARI YAN YANA ALMA VE DÜZENLEME ---
+        # 3 Sütun: Özet PDF | Detaylı PDF | Sonraki Sınav
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        
+        with col_btn1:
             pdf_data_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
-            st.download_button("📥 Planı İndir (Sadece Özet)", pdf_data_ozet, "Calisma_Plani_Ozet.pdf", "application/pdf")
-        with col2:
-            # Geniş Kaynaklı İndir
+            st.download_button("📥 Özet İndir", pdf_data_ozet, "Ozet_Plan.pdf", "application/pdf", use_container_width=True)
+            
+        with col_btn2:
             pdf_data_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
-            st.download_button("📥 Planı İndir (Detaylı/Ek Kaynaklı)", pdf_data_full, "Calisma_Plani_Detayli.pdf", "application/pdf")
+            st.download_button("📥 Detaylı İndir", pdf_data_full, "Detayli_Plan.pdf", "application/pdf", use_container_width=True)
+            
+        with col_btn3:
+            if st.button("Son Sınava Geç ➡️", use_container_width=True):
+                st.session_state['step'] = 4
+                st.rerun()
 
     else:
         st.balloons()
-        st.success("Tebrikler! Hiç eksiğin yok. Yine de konuları tekrar edebilirsin.")
-
-    if st.button("Son Sınava Geç ➡️"):
-        st.session_state['step'] = 4
-        st.rerun()
+        st.success("Tebrikler! Hiç eksiğin yok.")
+        if st.button("Son Sınava Geç ➡️"):
+            st.session_state['step'] = 4
+            st.rerun()
 
     st.divider()
-    col_s1, col_s2 = st.columns([1, 4])
-    with col_s1: st.markdown("### 🎚️ Hız:")
-    with col_s2: 
-        audio_speed = st.select_slider("", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
-    st.divider()
+    # Hız ayarı artık Sidebar'da, burada sadece içerik var
 
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
@@ -450,7 +456,7 @@ elif st.session_state['step'] == 3:
                     st.info(ek_bilgi)
                     if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
                         with st.spinner("Okunuyor..."):
-                            path = generate_audio_openai(ek_bilgi, audio_speed)
+                            path = generate_audio_openai(ek_bilgi, st.session_state['audio_speed'])
                             if path: st.audio(path)
         else:
             st.success(f"✅ {item['alt_baslik']} (Tamamlandı)")
@@ -459,7 +465,7 @@ elif st.session_state['step'] == 3:
         
         if st.button(f"🔊 Özeti Dinle", key=f"dinle_{i}"):
             with st.spinner("Seslendiriliyor..."):
-                path = generate_audio_openai(item['ozet'], audio_speed)
+                path = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
                 if path: st.audio(path)
         
         st.write("---")
