@@ -27,35 +27,17 @@ ADMIN_PASSWORD = st.secrets["admin_password"]
 
 # --- FIREBASE BAĞLANTISI (GÜVENLİ & PUBLIC YÖNTEM) ---
 # --- FIREBASE BAĞLANTISI (KESİN ÇÖZÜM) ---
+# --- FIREBASE BAĞLANTISI (YENİ DOSYA UYUMLU) ---
 if not firebase_admin._apps:
     try:
         # Secrets'tan veriyi al
         key_dict = dict(st.secrets["firebase"])
         
-        # 🛠️ ANAHTAR TAMİRİ BAŞLIYOR 🛠️
-        raw_key = key_dict["private_key"]
+        # 🔥 BU KOD ŞART: "\n" yazılarını gerçek enter tuşuna çevirir
+        key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         
-        # 1. Önce anahtarı tamamen çıplak hale getir (Başlıkları, boşlukları, \n'leri temizle)
-        # Böylece kopyalama hatası olan boşluklar yok olur.
-        clean_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "") \
-                           .replace("-----END PRIVATE KEY-----", "") \
-                           .replace("\\n", "") \
-                           .replace("\n", "") \
-                           .replace(" ", "") \
-                           .strip()
-        
-        # 2. Dokümanın istediği "64 karakterde bir satır atla" kuralını uygula
-        pem_key = "-----BEGIN PRIVATE KEY-----\n" + \
-                  "\n".join(textwrap.wrap(clean_key, 64)) + \
-                  "\n-----END PRIVATE KEY-----"
-        
-        # 3. Düzeltilmiş anahtarı sözlüğe geri koy
-        key_dict["private_key"] = pem_key
-        
-        # Bağlan
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
-        
     except Exception as e:
         st.error(f"Firebase Hatası: {e}")
         st.stop()
@@ -334,6 +316,7 @@ elif st.session_state['step'] == 4:
             else:
 
                 st.error("Kayıt sırasında bir hata oluştu.")
+
 
 
 
