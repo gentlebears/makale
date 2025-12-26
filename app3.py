@@ -21,144 +21,125 @@ st.set_page_config(page_title="Gemini Eğitim Platformu", layout="wide", page_ic
 nest_asyncio.apply()
 
 # =============================================================================
-# --- CSS VE TASARIM ENTEGRASYONU ---
+# --- CSS VE TASARIM (LATEX / MAKALE GÖRÜNÜMÜ) ---
 # =============================================================================
 st.markdown("""
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
-    /* 1. GLOBAL FONT AYARLARI */
-    html, body, [class*="css"] {
+    /* 1. ÜST BAR VE MENÜYÜ GİZLEME */
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display: none;}
+    
+    /* 2. GENEL ARKA PLAN (Koyu Beyaz / Gri - Makale Masası Gibi) */
+    .stApp {
+        background-color: #f4f4f9;
         font-family: 'Source Sans 3', sans-serif;
-        color: #2c3e50;
     }
     
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Source Serif 4', serif;
-        font-weight: 700;
-        color: #1a1a1a;
-    }
-    
-    code {
-        font-family: 'Source Code Pro', monospace;
-    }
-
-    /* 2. KAĞIT / KART TASARIMI */
+    /* 3. ANA İÇERİK BLOĞU (Kağıt Gibi Ortala) */
     .block-container {
-        padding-top: 3rem;
-        padding-bottom: 3rem;
-        max-width: 1000px;
+        padding-top: 2rem;
+        padding-bottom: 5rem;
+        max-width: 900px !important;
     }
 
-    /* Kartların Stili */
-    .stCard {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-        transition: box-shadow 0.3s ease;
+    /* 4. TİPOGRAFİ (Senin istediğin fontlar) */
+    h1, h2, h3 {
+        font-family: 'Source Serif 4', serif !important;
+        color: #1a1a1a;
+        font-weight: 700;
     }
-    .stCard:hover {
-        box-shadow: 0 4px 6px rgba(0,0,0,0.08);
-    }
-
-    /* 3. ÖZEL BİLEŞENLER */
-    
-    /* Soru Kartları */
-    .question-box {
-        background-color: #fff;
-        border-left: 4px solid #3498db;
-        padding: 20px;
-        margin-bottom: 15px;
-        border-radius: 0 8px 8px 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        font-family: 'Source Serif 4', serif;
-        font-size: 1.1rem;
-    }
-    
-    /* Çalışma Planı Kutuları */
-    .topic-box {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        overflow: hidden;
-        margin-bottom: 24px;
-        background: white;
-    }
-    
-    .topic-header {
-        padding: 12px 20px;
+    p, div, label, span {
         font-family: 'Source Sans 3', sans-serif;
-        font-weight: 600;
+        color: #2d3436;
+        font-size: 1.05rem;
+    }
+
+    /* 5. ÖZEL KART TASARIMI (MAKALE KAĞIDI HİSSİ) */
+    .paper-card {
+        background-color: #ffffff;
+        padding: 40px;
+        margin-bottom: 30px;
+        border: 1px solid #dcdde1;
+        border-radius: 4px; /* Keskin köşeler */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }
+
+    /* Soru Alanları */
+    .question-box {
+        background-color: #fcfcfc;
+        border-left: 5px solid #2d3436;
+        padding: 20px;
+        margin: 20px 0;
+        font-family: 'Source Serif 4', serif;
+        font-size: 1.15rem;
+    }
+
+    /* Konu Başlıkları */
+    .topic-header {
         display: flex;
         align-items: center;
-        gap: 10px;
-    }
-    
-    .topic-header.success {
-        background-color: #f0fdf4;
-        color: #166534;
-        border-bottom: 1px solid #dcfce7;
-    }
-    
-    .topic-header.error {
-        background-color: #fef2f2;
-        color: #991b1b;
-        border-bottom: 1px solid #fee2e2;
-    }
-    
-    .topic-content {
-        padding: 20px;
-        font-family: 'Source Sans 3', sans-serif;
-        line-height: 1.6;
-        color: #374151;
-    }
-    
-    /* Ek Kaynak Kutusu */
-    .extra-source {
-        margin-top: 15px;
         padding: 15px;
         background-color: #f8f9fa;
-        border-top: 1px solid #eee;
+        border-bottom: 2px solid #e9ecef;
+        font-weight: bold;
+        font-family: 'Source Serif 4', serif;
+    }
+    
+    .topic-header.success { border-left: 5px solid #27ae60; color: #27ae60; }
+    .topic-header.error { border-left: 5px solid #c0392b; color: #c0392b; }
+
+    .topic-content {
+        padding: 25px;
+        background-color: white;
+        line-height: 1.7;
+        text-align: justify;
+    }
+
+    /* Ek Kaynak */
+    .extra-source {
+        margin-top: 15px;
+        padding: 20px;
+        background-color: #fffbf0; /* Hafif sarımsı akademik not kağıdı */
+        border: 1px solid #fae5b0;
         font-family: 'Source Serif 4', serif;
         font-style: italic;
         color: #555;
-        font-size: 0.95rem;
     }
-    
-    /* Buton Özelleştirmesi */
-    .stButton > button {
-        border-radius: 6px;
-        font-family: 'Source Sans 3', sans-serif;
-        font-weight: 600;
-        border: none;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s;
-    }
-    
-    /* Input Alanları */
+
+    /* Form Elemanları (Streamlit'in kendi kutularını düzeltme) */
     .stTextInput > div > div > input {
-        font-family: 'Source Sans 3', sans-serif;
+        background-color: #ffffff;
+        border: 1px solid #b2bec3;
+        border-radius: 4px;
+    }
+    .stButton > button {
+        border-radius: 4px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        border: none;
     }
     
-    /* Sekme (Tab) Tasarımı */
+    /* Tab Tasarımı */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 10px;
+        background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
-        border-radius: 4px;
-        padding: 8px 16px;
-        font-family: 'Source Sans 3', sans-serif;
-        font-weight: 600;
+        background-color: #e0e0e0;
+        border-radius: 4px 4px 0 0;
+        color: #636e72;
+        font-weight: bold;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #f3f4f6;
-        color: #111827;
+        background-color: #ffffff;
+        color: #2d3436;
+        border-top: 3px solid #2d3436;
     }
 
 </style>
@@ -373,7 +354,6 @@ class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 10)
         self.set_text_color(150, 150, 150)
-        # BURADA HATA YOKTU, ÇÜNKÜ POSITIONAL ARGUMENT SIRASI DOĞRU
         self.cell(0, 10, safe_text('Gemini Egitim Platformu | Kisisel Calisma Plani'), 0, 1, 'R')
         self.ln(5)
 
@@ -384,16 +364,15 @@ class PDF(FPDF):
         self.cell(0, 10, safe_text('Sayfa ') + str(self.page_no()), 0, 0, 'C')
 
     def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
-        # Renk Paleti
         if is_mistake:
-            header_fill = (254, 242, 242) # Açık Kırmızı
-            header_text = (153, 27, 27)   # Koyu Kırmızı
-            border_col = (252, 165, 165)  # Kenarlık Kırmızı
+            header_fill = (254, 242, 242) 
+            header_text = (153, 27, 27)   
+            border_col = (252, 165, 165)  
             status_text = "(!) TEKRAR ET"
         else:
-            header_fill = (240, 253, 244) # Açık Yeşil
-            header_text = (22, 101, 52)   # Koyu Yeşil
-            border_col = (134, 239, 172)  # Kenarlık Yeşil
+            header_fill = (240, 253, 244) 
+            header_text = (22, 101, 52)   
+            border_col = (134, 239, 172)  
             status_text = "TAMAMLANDI"
 
         self.set_draw_color(*border_col)
@@ -405,19 +384,16 @@ class PDF(FPDF):
         
         x = self.get_x()
         
-        # Başlık Hücresi
         title_full = f"{status_text}: {safe_text(title)}"
         self.cell(0, 10, title_full, 1, 1, 'L', True)
         
         content_start_y = self.get_y()
         
-        # Özet Metni
         self.set_text_color(50, 50, 50)
         self.set_font('Arial', '', 10)
         self.set_xy(x + 2, content_start_y + 3)
         self.multi_cell(0, 5, safe_text(summary))
         
-        # Ek Kaynak
         if include_extra and extra_info:
             self.ln(3)
             line_y = self.get_y()
@@ -435,7 +411,6 @@ class PDF(FPDF):
         self.ln(3)
         content_end_y = self.get_y()
         
-        # Dış çerçeve
         self.set_draw_color(*border_col)
         self.set_xy(x, content_start_y)
         self.rect(x, content_start_y, 190, content_end_y - content_start_y)
@@ -447,17 +422,13 @@ def create_study_pdf(data, mistakes, include_extra=True):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
     
-    # Ana Başlık - HATA BURADAYDI, DÜZELTİLDİ
     pdf.set_font("Arial", 'B', 22)
     pdf.set_text_color(33, 37, 41)
-    # align='C' olarak düzeltildi
     pdf.cell(0, 15, safe_text("CALISMA PLANI RAPORU"), ln=1, align='C') 
     
-    # Alt Bilgi - HATA BURADAYDI, DÜZELTİLDİ
     pdf.set_font("Arial", '', 12)
     pdf.set_text_color(100, 100, 100)
     type_str = "Detayli Akademik Rapor" if include_extra else "Ozet Konu Anlatimi"
-    # align='C' olarak düzeltildi
     pdf.cell(0, 8, safe_text(f"Rapor Turu: {type_str}"), ln=1, align='C')
     
     pdf.ln(10)
@@ -472,14 +443,7 @@ def create_study_pdf(data, mistakes, include_extra=True):
         
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
-# ================= ARAYÜZ (YENİLENMİŞ TASARIM) =================
-
-st.markdown("""
-    <div style='text-align: center; margin-bottom: 30px;'>
-        <h1 style='font-family: "Source Serif 4", serif; color: #1e293b; font-size: 3rem;'>Gemini Eğitim Platformu</h1>
-        <p style='font-family: "Source Sans 3", sans-serif; color: #64748b; font-size: 1.2rem;'>Yapay Zeka Destekli, Akademik Standartlarda Öğrenme Deneyimi</p>
-    </div>
-""", unsafe_allow_html=True)
+# ================= ARAYÜZ (GÜNCELLENMİŞ PAPER TASARIMI) =================
 
 LESSON_FILE = "lesson_data.json"
 
@@ -491,9 +455,16 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
 
 # --- GİRİŞ ---
 if st.session_state['step'] == 0:
+    st.markdown("""
+    <div style='text-align: center; margin-bottom: 40px;'>
+        <h1 style='font-size: 3rem;'>Gemini Eğitim Platformu</h1>
+        <p style='color: #636e72;'>Yapay Zeka Destekli, Akademik Standartlarda Öğrenme Deneyimi</p>
+    </div>
+    """, unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        st.markdown("<div class='paper-card'>", unsafe_allow_html=True)
         
         tab1, tab2 = st.tabs(["Öğrenci Girişi", "Öğretmen Girişi"])
         
@@ -526,12 +497,12 @@ if st.session_state['step'] == 0:
 
 # --- ADIM 1: ÖĞRETMEN ---
 elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
-    st.markdown("<h2 style='text-align:center;'>Yönetici Kontrol Paneli</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center; margin-bottom:30px;'>Yönetici Kontrol Paneli</h2>", unsafe_allow_html=True)
     
     tab_ders, tab_sonuc = st.tabs(["📚 Ders İçeriği Yönetimi", "📊 Sınav Analitikleri"])
     
     with tab_ders:
-        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        st.markdown("<div class='paper-card'>", unsafe_allow_html=True)
         st.subheader("Yeni Ders Yükle")
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -562,7 +533,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
         st.markdown("</div>", unsafe_allow_html=True)
     
     with tab_sonuc:
-        st.markdown("<div class='stCard'>", unsafe_allow_html=True)
+        st.markdown("<div class='paper-card'>", unsafe_allow_html=True)
         col1, col2 = st.columns([4, 1])
         with col2:
             if st.button("Verileri Yenile"):
@@ -593,11 +564,14 @@ elif st.session_state['step'] == 2:
             q = item['soru_data']
             
             st.markdown(f"""
-            <div class="question-box">
-                <strong>SORU {i+1}:</strong> {q['soru']}
+            <div class="paper-card" style="padding: 20px; margin-bottom: 15px;">
+                <div class="question-box">
+                    <strong>SORU {i+1}:</strong> {q['soru']}
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
+            # Radyo butonlarını dışarıya alıyoruz ki Streamlit stili bozulmasın
             ans[i] = st.radio("Seçiniz:", [q['A'], q['B'], q['C'], q['D']], key=f"p_{i}", label_visibility="collapsed")
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -620,9 +594,9 @@ elif st.session_state['step'] == 2:
 # --- ADIM 3: ÇALIŞMA PLANI ---
 elif st.session_state['step'] == 3:
     st.markdown(f"""
-    <div style='text-align:center; padding: 20px;'>
-        <h2 style='color:#2c3e50;'>Kişiselleştirilmiş Çalışma Planı</h2>
-        <p style='font-size:1.2rem;'>Ön Test Puanı: <strong>{st.session_state['scores']['pre']} / {len(st.session_state['data'])}</strong></p>
+    <div style='text-align:center; padding: 20px; margin-bottom: 20px;'>
+        <h2 style='color:#2d3436; font-family: "Source Serif 4", serif;'>Kişiselleştirilmiş Çalışma Planı</h2>
+        <p style='font-size:1.2rem; font-family: "Source Sans 3";'>Ön Test Puanı: <strong>{st.session_state['scores']['pre']} / {len(st.session_state['data'])}</strong></p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -630,13 +604,11 @@ elif st.session_state['step'] == 3:
     
     with col1:
         if st.session_state['mistakes']:
-            # PDF 1: Sadece Özet
             pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
             st.download_button("📄 Özet Raporu İndir", pdf_ozet, "Ozet_Calisma_Plani.pdf", "application/pdf", use_container_width=True)
             
     with col2:
         if st.session_state['mistakes']:
-            # PDF 2: Geniş (Ek Kaynaklı)
             pdf_genis = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
             st.download_button("📑 Detaylı Akademik Rapor İndir", pdf_genis, "Detayli_Calisma_Plani.pdf", "application/pdf", type="primary", use_container_width=True)
 
@@ -654,9 +626,9 @@ elif st.session_state['step'] == 3:
         status_text = "Eksik Konu - Tekrar Gerekli" if is_wrong else "Konu Anlaşıldı"
         
         st.markdown(f"""
-        <div class="topic-box">
+        <div class="paper-card" style="padding: 0; overflow: hidden;">
             <div class="topic-header {status_class}">
-                <span>{icon}</span>
+                <span style="margin-right: 10px;">{icon}</span>
                 <span style="flex-grow:1;">{item['alt_baslik']}</span>
                 <span style="font-size:0.8rem; opacity:0.8;">{status_text}</span>
             </div>
@@ -664,7 +636,6 @@ elif st.session_state['step'] == 3:
                 {item['ozet']}
         """, unsafe_allow_html=True)
         
-        # Ek Bilgi Kısmı
         if is_wrong and item.get('ek_bilgi'):
             st.markdown(f"""
                 <div class="extra-source">
@@ -684,8 +655,10 @@ elif st.session_state['step'] == 4:
         for i, item in enumerate(st.session_state['data']):
             q = item['soru_data']
             st.markdown(f"""
-            <div class="question-box">
-                <strong>SORU {i+1}:</strong> {q['soru']}
+            <div class="paper-card" style="padding: 20px; margin-bottom: 15px;">
+                <div class="question-box">
+                    <strong>SORU {i+1}:</strong> {q['soru']}
+                </div>
             </div>
             """, unsafe_allow_html=True)
             ans[i] = st.radio("Cevap:", [q['A'], q['B'], q['C'], q['D']], key=f"son_{i}", label_visibility="collapsed")
@@ -708,8 +681,8 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.markdown(f"""
-                <div class='stCard' style='text-align:center; background-color:#f0fdf4;'>
-                    <h1 style='color:#166534;'>🎉 Tebrikler!</h1>
+                <div class='paper-card' style='text-align:center; background-color:#f0fdf4;'>
+                    <h1 style='color:#27ae60;'>🎉 Tebrikler!</h1>
                     <h3>Son Sınav Puanı: {score} / {len(st.session_state['data'])}</h3>
                     <p>Sonuçlarınız sisteme başarıyla kaydedildi.</p>
                 </div>
