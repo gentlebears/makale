@@ -98,7 +98,7 @@ def get_class_data_from_firebase():
         st.error(f"Veri Çekme Hatası: {e}")
         return []
 
-# --- VERİ DÜZELTME MOTORU (BU KISIM ÖNEMLİ, KORUNDU) ---
+# --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
     # 1. Puanları Birleştir
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
@@ -229,7 +229,7 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- PDF OLUŞTURUCU (STANDART TASARIM) ---
+# --- PDF OLUŞTURUCU ---
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 15)
@@ -237,24 +237,21 @@ class PDF(FPDF):
         self.ln(5)
 
     def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
-        # Başlık Rengi
         if is_mistake:
-            self.set_text_color(200, 0, 0) # Kırmızı
+            self.set_text_color(200, 0, 0)
             title = f"(!) {title} - [TEKRAR ET]"
         else:
-            self.set_text_color(0, 100, 0) # Yeşil
+            self.set_text_color(0, 100, 0)
             title = f"{title} (Tamamlandi)"
             
         self.set_font('Arial', 'B', 12)
         self.cell(0, 10, safe_text(title), ln=1)
         
-        # İçerik
         self.set_text_color(0)
         self.set_font('Arial', '', 11)
         self.multi_cell(0, 6, safe_text(summary))
         self.ln(2)
         
-        # Ek Bilgi (Opsiyonel)
         if include_extra and extra_info:
             self.set_text_color(80, 80, 80)
             self.set_font('Arial', 'I', 10)
@@ -270,7 +267,6 @@ def create_study_pdf(data, mistakes, include_extra=True):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Rapor Türü Bilgisi
     pdf.set_font("Arial", 'I', 10)
     pdf.set_text_color(100, 100, 100)
     type_str = "Detayli Rapor (Ek Kaynakli)" if include_extra else "Ozet Rapor"
@@ -287,7 +283,7 @@ def create_study_pdf(data, mistakes, include_extra=True):
         
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
-# ================= ARAYÜZ (STANDART STREAMLIT) =================
+# ================= ARAYÜZ (SADE VE 2 SEKMELİ ADMIN) =================
 
 st.title("☁️ Gemini Eğitim Platformu (Cloud v4 Stable)")
 
@@ -299,7 +295,7 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
             st.session_state['data'] = json.load(f)
     except: pass
 
-# --- GİRİŞ ---
+# --- GİRİŞ EKRANI ---
 if st.session_state['step'] == 0:
     tab1, tab2 = st.tabs(["👨‍🎓 Öğrenci Girişi", "👨‍🏫 Öğretmen Paneli"])
     
@@ -328,11 +324,16 @@ if st.session_state['step'] == 0:
                 st.rerun()
             else: st.error("Hatalı Şifre")
 
-# --- ADIM 1: ÖĞRETMEN ---
+# --- ADIM 1: YÖNETİCİ PANELİ (2 SEKMELİ) ---
 elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
     st.header("Yönetici Paneli")
-    col1, col2 = st.columns(2)
-    with col1:
+    
+    # İki sekme oluşturuyoruz: Video Yükleme ve Sonuçlar
+    tab_upload, tab_results = st.tabs(["📚 Ders İşle / Video Yükle", "📊 Sınav Sonuçları"])
+    
+    # 1. SEKME: VİDEO YÜKLEME
+    with tab_upload:
+        st.subheader("Yeni Ders İçeriği Yükle")
         up = st.file_uploader("Video (.mp4)", type=["mp4"])
         if up and st.button("Dersi İşle"):
             with st.spinner("Yapay zeka çalışıyor..."):
@@ -355,9 +356,9 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                     else: st.error("Ses ayrıştırılamadı.")
                 except Exception as e: st.error(str(e))
     
-    with col2:
-        # --- SONUÇLARI GÖR (DÜZELTİLMİŞ) ---
-        st.subheader("Sınav Sonuçları")
+    # 2. SEKME: SINAV SONUÇLARI
+    with tab_results:
+        st.subheader("Öğrenci Sınav Sonuçları")
         if st.button("Sonuçları Gör / Yenile"):
             data_raw = get_class_data_from_firebase()
             if data_raw:
@@ -484,7 +485,7 @@ elif st.session_state['step'] == 4:
                 "ad_soyad": st.session_state['student_info']['name'],
                 "no": st.session_state['student_info']['no'],
                 "tarih": time.strftime("%Y-%m-%d %H:%M"),
-                "on_test": st.session_state['scores']['pre'], # Eski puan (0 gelebilir)
+                "on_test": st.session_state['scores']['pre'],
                 "son_test": score
             }
             if save_results_to_firebase(res):
