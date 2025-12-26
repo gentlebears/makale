@@ -16,7 +16,7 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu (Pro v3)", layout="wide")
+st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Stable)", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
@@ -24,25 +24,33 @@ gemini_api_key = st.secrets["gemini_key"]
 openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
-# --- FIREBASE BAĞLANTISI ---
+# --- FIREBASE BAĞLANTISI (DÜZELTİLMİŞ) ---
+# Önce db değişkenini boş tanımlayalım ki NameError vermesin
+db = None 
+
 if not firebase_admin._apps:
     try:
         key_dict = dict(st.secrets["firebase"])
-        # PEM hatası önleyici
         key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebase Hatası: {e}")
+        st.error(f"Firebase Bağlantı Hatası: {e}")
         st.stop()
 
-db = firestore.client()
+# BU SATIR ARTIK 'IF' BLOĞUNUN DIŞINDA VE GÜVENDE 
+try:
+    db = firestore.client()
+except Exception as e:
+    st.error(f"Veritabanı İstemcisi Hatası: {e}")
 
-# --- API BAĞLANTILARI ---
+# --- API BAĞLANTILARI (GÜVENLİ MOD) ---
+client = None # NameError önleyici
 try:
     genai.configure(api_key=gemini_api_key)
     client = OpenAI(api_key=openai_api_key)
-except: pass
+except: 
+    pass # Hata olsa bile client=None olduğu için kod patlamaz
 
 # --- STATE YÖNETİMİ ---
 def init_state():
@@ -64,85 +72,48 @@ def init_state():
 
 init_state()
 
-# --- PDF İÇİN TÜRKÇE KARAKTER DÜZELTİCİ (GELİŞMİŞ) ---
+# --- FIREBASE KAYIT FONKSİYONLARI ---
+def save_results_to_firebase(student_data):
+    if db is None:
+        st.error("Veritabanı bağlantısı yok!")
+        return False
+    try:
+        doc_ref = db.collection('exam_results').document(student_data['no'])
+        doc_ref.set(student_data)
+        return True
+    except Exception as e:
+        st.error(f"Veritabanı Hatası: {e}")
+        return False
+
+def get_class_data_from_firebase():
+    if db is None:
+        st.error("Veritabanı bağlantısı yok!")
+        return []
+    try:
+        docs = db.collection('exam_results').stream()
+        data = []
+        for doc in docs:
+            data.append(doc.to_dict())
+        return data
+    except Exception as e:
+        st.error(f"Veri Çekme Hatası: {e}")
+        return []
+
+# --- YARDIMCI: PDF İÇİN KARAKTER DÜZELTİCİ ---
 def safe_text(text):
-    """
-    FPDF standart fontları Türkçe karakterleri desteklemez.
-    Bu fonksiyon, PDF'in bozulmaması için Türkçe karakterleri
-    en uygun İngilizce karşılıklarına dönüştürür.
-    """
     if text is None: return ""
-    text = str(text)
-    mapping = {
-        'ı': 'i', 'İ': 'I',
-        'ğ': 'g', 'Ğ': 'G',
-        'ü': 'u', 'Ü': 'U',
-        'ş': 's', 'Ş': 'S',
-        'ö': 'o', 'Ö': 'O',
-        'ç': 'c', 'Ç': 'C',
-        '’': "'", '‘': "'", '“': '"', '”': '"', '–': '-'
+    tr_map = {
+        ord('ı'):'i', ord('İ'):'I', ord('ğ'):'g', ord('Ğ'):'G', 
+        ord('ü'):'u', ord('Ü'):'U', ord('ş'):'s', ord('Ş'):'S', 
+        ord('ö'):'o', ord('Ö'):'O', ord('ç'):'c', ord('Ç'):'C',
+        ord('’'):"'", '‘':"'", '“':'"', '”':'"', '–':'-'
     }
-    for tr, en in mapping.items():
-        text = text.replace(tr, en)
-    
-    # Latin-1 encode/decode ile desteklenmeyen diğer karakterleri temizle
-    return text.encode('latin-1', 'replace').decode('latin-1')
+    try:
+        return text.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+    except:
+        return text
 
-# --- PDF OLUŞTURUCU (TASARIM ODAKLI) ---
-class PDFReport(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'KISISELLESTIRILMIS CALISMA PLANI', 0, 1, 'C')
-        self.ln(5)
-
-def create_study_pdf(data, mistakes):
-    pdf = PDFReport()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    for i, item in enumerate(data):
-        baslik = safe_text(item.get('alt_baslik', f'Konu {i+1}'))
-        ozet = safe_text(item.get('ozet', ''))
-        ek_bilgi = safe_text(item.get('ek_bilgi', ''))
-        
-        # 1. BAŞLIK ALANI (Görsel Tasarım)
-        pdf.set_font("Arial", 'B', 12)
-        
-        if i in mistakes:
-            # HATA VARSA: Kırmızı Başlık
-            pdf.set_fill_color(255, 200, 200) # Açık Kırmızı Arkaplan
-            pdf.set_text_color(200, 0, 0)     # Koyu Kırmızı Yazı
-            pdf.cell(0, 8, f"[!] {baslik} (TEKRAR ET)", 1, 1, 'L', fill=True)
-            
-            # İçerik Rengi (Siyah)
-            pdf.set_text_color(0)
-            pdf.set_font("Arial", '', 10)
-            pdf.multi_cell(0, 5, ozet)
-            pdf.ln(2)
-            
-            # EK KAYNAK (Sadece hatalıysa gösterilir - Logic Restoration)
-            if ek_bilgi:
-                pdf.set_text_color(50, 50, 100) # Lacivert/Gri ton
-                pdf.set_font("Arial", 'I', 9)
-                pdf.multi_cell(0, 5, f"AKADEMIK NOT: {ek_bilgi}")
-                
-        else:
-            # DOĞRUYSA: Yeşil/Gri Başlık
-            pdf.set_fill_color(220, 255, 220) # Açık Yeşil Arkaplan
-            pdf.set_text_color(0, 100, 0)     # Koyu Yeşil Yazı
-            pdf.cell(0, 8, f"[OK] {baslik}", 1, 1, 'L', fill=True)
-            
-            # İçerik
-            pdf.set_text_color(80, 80, 80) # Hafif silik siyah
-            pdf.set_font("Arial", '', 10)
-            pdf.multi_cell(0, 5, ozet)
-            # Doğru bilinen konuda Ek Bilgi PDF'e basılmaz (Sadeleştirme)
-            
-        pdf.ln(5) # Boşluk
-        
-    return pdf.output(dest='S').encode('latin-1', 'replace')
-
-# --- WHISPER & AI ---
+# --- WHISPER & AI FONKSİYONLARI ---
 @st.cache_resource
 def load_whisper():
     return whisper.load_model("base", device="cpu")
@@ -156,8 +127,6 @@ def sesi_sokup_al(video_path, audio_path):
         return False
 
 def analyze_full_text_with_gemini(full_text):
-    # 001 MANTIĞINI GERİ GETİRDİK: Ek Bilgi İstiyoruz.
-    # Fallback Stratejisi: Önce 2.5 Flash, olmazsa 1.5 Flash
     primary_model = "gemini-2.5-flash"
     fallback_model = "gemini-2.0-flash"
     
@@ -166,16 +135,13 @@ def analyze_full_text_with_gemini(full_text):
         model = genai.GenerativeModel(primary_model)
         model.generate_content("test") 
     except:
-        st.warning(f"⚠️ {primary_model} yoğun, {fallback_model} kullanılıyor.")
+        st.warning(f"⚠️ {primary_model} yanıt vermedi, {fallback_model} kullanılıyor.")
         model = genai.GenerativeModel(fallback_model)
 
     if len(full_text) < 50: return []
 
-    # GELİŞTİRİLMİŞ PROMPT (001 Mantığı)
     prompt = f"""
     Sen uzman bir eğitim asistanısın. Video transkriptini analiz et.
-    
-    HEDEF: Öğrencinin konuyu derinlemesine anlamasını sağlamak.
     
     GÖREVLER:
     1. Konuyu alt başlıklara böl.
@@ -217,10 +183,55 @@ def generate_audio_openai(text, speed):
         response.stream_to_file(tfile.name)
         return tfile.name
     except: return None
+    
+# --- GELİŞMİŞ PDF FONKSİYONU ---
+def create_study_pdf(data, mistakes):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 15, "KISISELLESTIRILMIS CALISMA PLANI", ln=1, align='C')
+    pdf.ln(5)
+    
+    for i, item in enumerate(data):
+        baslik = safe_text(item.get('alt_baslik', 'Konu'))
+        ozet = safe_text(item.get('ozet', ''))
+        ek_bilgi = safe_text(item.get('ek_bilgi', ''))
+        
+        if i in mistakes:
+            # HATA VARSA KIRMIZI
+            pdf.set_text_color(200, 0, 0)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, f"(!) {baslik} - [TEKRAR ET]", ln=1)
+        else:
+            # DOĞRUYSA YEŞİL
+            pdf.set_text_color(0, 100, 0)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, f"{baslik} (Tamamlandi)", ln=1)
+        
+        # İçerik
+        pdf.set_text_color(0)
+        pdf.set_font("Arial", '', 11)
+        pdf.multi_cell(0, 6, ozet)
+        pdf.ln(2)
+        
+        # Ek Bilgi
+        if ek_bilgi:
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_font("Arial", 'I', 10)
+            pdf.multi_cell(0, 6, f"[EK KAYNAK]: {ek_bilgi}")
+            pdf.ln(2)
+            
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(5)
+        
+    return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ================= ARAYÜZ =================
 
-st.title("☁️ Gemini Eğitim Platformu (Cloud v3)")
+st.title("☁️ Gemini Eğitim Platformu (Cloud v4 Stable)")
 
 LESSON_FILE = "lesson_data.json"
 
@@ -275,7 +286,6 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                     if sesi_sokup_al(tfile.name, audio_path):
                         model_w = load_whisper()
                         res = model_w.transcribe(audio_path)
-                        # Gemini'ye Ek Kaynaklı Prompt Gidiyor
                         analysis = analyze_full_text_with_gemini(res['text'])
                         
                         if analysis:
@@ -318,11 +328,10 @@ elif st.session_state['step'] == 2:
             st.session_state['step'] = 3
             st.rerun()
 
-# --- ADIM 3: ÇALIŞMA (LOGIC RESTORED) ---
+# --- ADIM 3: ÇALIŞMA ---
 elif st.session_state['step'] == 3:
     st.success(f"Puan: {st.session_state['scores']['pre']}")
     
-    # PDF Butonu (Sadece Hata Varsa Mantıklı)
     if st.session_state['mistakes']:
         st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var.")
         if st.button("📥 Kişiselleştirilmiş Çalışma Planı (PDF)"):
@@ -336,7 +345,6 @@ elif st.session_state['step'] == 3:
         st.session_state['step'] = 4
         st.rerun()
 
-    # Hız Kontrolü
     st.divider()
     col_s1, col_s2 = st.columns([1, 4])
     with col_s1: st.markdown("### 🎚️ Hız:")
@@ -344,16 +352,13 @@ elif st.session_state['step'] == 3:
         audio_speed = st.select_slider("", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
     st.divider()
 
-    # KONU LİSTESİ
     for i, item in enumerate(st.session_state['data']):
-        # MANTIK: Hata yapıldıysa detaylı göster, yapılmadıysa özet geç.
         is_wrong = i in st.session_state['mistakes']
         
         if is_wrong:
             st.error(f"🔻 {item['alt_baslik']} (Eksik Konu)")
             st.write(f"**Özet:** {item['ozet']}")
             
-            # MANTIK RESTORASYONU: Ek Bilgi SADECE yanlış yapılanlarda vurgulanır
             ek_bilgi = item.get('ek_bilgi')
             if ek_bilgi:
                 with st.expander("📚 Akademik Ek Kaynak (Okuman Önerilir)"):
@@ -367,7 +372,6 @@ elif st.session_state['step'] == 3:
             with st.expander("Konu Özetini Gör"):
                 st.write(item['ozet'])
         
-        # Dinleme Butonu (Herkes için)
         if st.button(f"🔊 Özeti Dinle", key=f"dinle_{i}"):
             with st.spinner("Seslendiriliyor..."):
                 path = generate_audio_openai(item['ozet'], audio_speed)
@@ -399,6 +403,6 @@ elif st.session_state['step'] == 4:
                 "on_test": st.session_state['scores']['pre'],
                 "son_test": score
             }
-            save_results_to_firebase(res)
-            st.balloons()
-            st.success(f"Sınav Bitti! Puan: {score}")
+            if save_results_to_firebase(res):
+                st.balloons()
+                st.success(f"Sınav Bitti! Puan: {score}")
