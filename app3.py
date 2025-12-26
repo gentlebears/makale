@@ -9,7 +9,7 @@ import subprocess
 import random
 import nest_asyncio
 import pandas as pd
-import numpy as np  # EKLENDİ: Veri işleme için gerekli
+import numpy as np
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -25,7 +25,7 @@ gemini_api_key = st.secrets["gemini_key"]
 openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
-# --- FIREBASE BAĞLANTISI (DÜZELTİLMİŞ) ---
+# --- FIREBASE BAĞLANTISI ---
 db = None 
 
 if not firebase_admin._apps:
@@ -43,7 +43,7 @@ try:
 except Exception as e:
     st.error(f"Veritabanı İstemcisi Hatası: {e}")
 
-# --- API BAĞLANTILARI (GÜVENLİ MOD) ---
+# --- API BAĞLANTILARI ---
 client = None 
 try:
     genai.configure(api_key=gemini_api_key)
@@ -77,7 +77,8 @@ def save_results_to_firebase(student_data):
         st.error("Veritabanı bağlantısı yok!")
         return False
     try:
-        doc_ref = db.collection('exam_results').document(str(student_data['no'])) # No string olmalı
+        # Öğrenci numarasını string yapıp ID olarak kullanıyoruz
+        doc_ref = db.collection('exam_results').document(str(student_data['no']))
         doc_ref.set(student_data)
         return True
     except Exception as e:
@@ -98,13 +99,14 @@ def get_class_data_from_firebase():
         st.error(f"Veri Çekme Hatası: {e}")
         return []
 
-# --- VERİ DÜZELTME VE FORMATLAMA MOTORU (YENİ EKLENDİ) ---
-def format_data_for_csv(df):
+# --- VERİ DÜZELTME VE FORMATLAMA MOTORU (DİNAMİK) ---
+def format_data_for_csv(df, soru_sayisi_input=None):
     """
     Karmaşık veriyi alır, 0/None hatalarını düzeltir 
     ve istenen CSV formatına çevirir.
+    soru_sayisi_input: O anki dersin soru sayısı.
     """
-    # 1. Puanları Birleştir (on_test_puan yoksa on_test'i al)
+    # 1. Puanları Birleştir (Sütun isimleri değişebiliyor)
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
     elif 'on_test' in df.columns:
@@ -112,9 +114,8 @@ def format_data_for_csv(df):
     elif 'on_test_puan' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan']
     else:
-        df['1. Test Doğru Sayısı'] = 0 # Hiçbir sütun yoksa
+        df['1. Test Doğru Sayısı'] = 0 
 
-    # Aynı işlemi son test için yap
     if 'son_test_puan' in df.columns and 'son_test' in df.columns:
         df['2. Test Doğru Sayısı'] = df['son_test_puan'].combine_first(df['son_test'])
     elif 'son_test' in df.columns:
@@ -124,47 +125,36 @@ def format_data_for_csv(df):
     else:
         df['2. Test Doğru Sayısı'] = 0
 
-    # 2. None (Boş) Olanları 0 Yap ve Tamsayıya Çevir
-    # pd.to_numeric ile hatalı karakter varsa (örn: boş string) onları NaN yapıp sonra 0'a çeviriyoruz
+    # 2. None (Boş) Olanları 0 Yap
     df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
     df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
 
     # 3. NET Hesapla
     df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
 
-    # 4. İsimlendirmeleri ve Sabitleri Ayarla
-    # Sütun isimleri bazen farklı gelebilir, kontrol edelim
-    if 'ad_soyad' in df.columns:
-        df['Ad Soyad'] = df['ad_soyad']
-    else:
-        df['Ad Soyad'] = "Bilinmiyor"
+    # 4. İsimlendirmeleri Ayarla
+    if 'ad_soyad' in df.columns: df['Ad Soyad'] = df['ad_soyad']
+    else: df['Ad Soyad'] = "Bilinmiyor"
         
-    if 'no' in df.columns:
-        df['Öğrenci No'] = df['no']
-    else:
-        df['Öğrenci No'] = 0
+    if 'no' in df.columns: df['Öğrenci No'] = df['no']
+    else: df['Öğrenci No'] = 0
 
-    df['Soru Sayısı'] = 15  # Sabit değer
+    # --- Soru Sayısını Ayarla ---
+    # Eğer dışarıdan sayı geldiyse onu kullan, yoksa 15 varsay.
+    final_count = soru_sayisi_input if soru_sayisi_input and soru_sayisi_input > 0 else 15
+    df['Soru Sayısı'] = final_count
 
-    # 5. Sadece İstenen Sütunları Seç
-    target_columns = [
-        'Ad Soyad', 
-        'Öğrenci No', 
-        'Soru Sayısı', 
-        '1. Test Doğru Sayısı', 
-        '2. Test Doğru Sayısı', 
-        'NET'
-    ]
+    # 5. İstenen Sütunları Seç
+    target_columns = ['Ad Soyad', 'Öğrenci No', 'Soru Sayısı', '1. Test Doğru Sayısı', '2. Test Doğru Sayısı', 'NET']
     
-    # Sadece bu sütunları içeren temiz bir kopya döndür
-    # Sütunların hepsi mevcut mu kontrol et, değilse oluştur
+    # Eksik sütun varsa oluştur (Hata vermemesi için)
     for col in target_columns:
         if col not in df.columns:
             df[col] = 0 if 'Sayısı' in col or 'NET' in col or 'No' in col else ""
 
     return df[target_columns]
 
-# --- YARDIMCI: PDF İÇİN KARAKTER DÜZELTİCİ ---
+# --- YARDIMCI FONKSİYONLAR ---
 def safe_text(text):
     if text is None: return ""
     tr_map = {
@@ -178,7 +168,6 @@ def safe_text(text):
     except:
         return text
 
-# --- WHISPER & AI FONKSİYONLARI ---
 @st.cache_resource
 def load_whisper():
     return whisper.load_model("base", device="cpu")
@@ -249,7 +238,6 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- GELİŞMİŞ PDF FONKSİYONU ---
 def create_study_pdf(data, mistakes):
     pdf = FPDF()
     pdf.add_page()
@@ -265,23 +253,19 @@ def create_study_pdf(data, mistakes):
         ek_bilgi = safe_text(item.get('ek_bilgi', ''))
         
         if i in mistakes:
-            # HATA VARSA KIRMIZI
             pdf.set_text_color(200, 0, 0)
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, f"(!) {baslik} - [TEKRAR ET]", ln=1)
         else:
-            # DOĞRUYSA YEŞİL
             pdf.set_text_color(0, 100, 0)
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, f"{baslik} (Tamamlandi)", ln=1)
         
-        # İçerik
         pdf.set_text_color(0)
         pdf.set_font("Arial", '', 11)
         pdf.multi_cell(0, 6, ozet)
         pdf.ln(2)
         
-        # Ek Bilgi
         if ek_bilgi:
             pdf.set_text_color(80, 80, 80)
             pdf.set_font("Arial", 'I', 10)
@@ -363,21 +347,24 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                 except Exception as e: st.error(str(e))
     
     with col2:
-        # --- GÜNCELLENEN SONUÇLARI GÖR KISMI ---
+        # --- Sınav Sonuçları Bölümü ---
         st.subheader("Sınav Sonuçları")
         if st.button("Sonuçları Gör / Yenile"):
             data_raw = get_class_data_from_firebase()
             if data_raw:
-                # Veriyi DataFrame'e çevir
+                # Veriyi al
                 df_raw = pd.DataFrame(data_raw)
                 
-                # ÖZEL FONKSİYON İLE VERİYİ TEMİZLE VE HESAPLA
-                df_clean = format_data_for_csv(df_raw)
+                # Soru sayısını hafızadan al (Yoksa 15 varsay)
+                mevcut_soru_sayisi = len(st.session_state['data']) if st.session_state['data'] else 15
                 
-                # Tabloyu Göster
+                # Temizlik ve hesaplama fonksiyonunu çağır
+                df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru_sayisi)
+                
+                # Ekrana bas
                 st.dataframe(df_clean, use_container_width=True)
                 
-                # CSV İndirme Butonu
+                # İndirme Butonu
                 csv_data = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 Tabloyu Excel (CSV) Olarak İndir",
