@@ -101,8 +101,16 @@ def sesi_sokup_al(video_path, audio_path):
         return False
 
 def analyze_full_text_with_gemini(full_text):
-    model = genai.GenerativeModel('gemini-2.0-flash') 
-    # Prompt biraz daha sıkılaştırıldı ki JSON hatası vermesin
+    # GÜNCELLEME: Daha stabil olan 1.5-flash modeline geçildi
+    model = genai.GenerativeModel('gemini-1.5-flash') 
+    
+    # DEBUG: Whisper'ın ne duyduğunu ekrana yazdıralım
+    st.info(f"🕵️ DEBUG: Whisper {len(full_text)} karakterlik metin çıkardı.")
+    
+    if len(full_text) < 50:
+        st.warning(f"⚠️ UYARI: Çıkarılan metin çok kısa! Muhtemelen ses anlaşılmadı veya ffmpeg çalışmadı. Metin: '{full_text}'")
+        return []
+
     prompt = f"""GÖREV: Aşağıdaki metni eğitim materyaline dönüştür. 
     Çıktı SADECE geçerli bir JSON formatında olmalı.
     
@@ -130,7 +138,9 @@ def analyze_full_text_with_gemini(full_text):
         start = text.find('[')
         end = text.rfind(']') + 1
         return json.loads(text[start:end])
-    except: return []
+    except Exception as e:
+        st.error(f"🚨 GEMINI HATASI: {e}")
+        return []
 
 def generate_audio_openai(text, speed):
     if not client or len(text) < 2: return None
@@ -177,7 +187,7 @@ if os.path.exists(LESSON_FILE) and not st.session_state['data']:
         with open(LESSON_FILE, 'r', encoding='utf-8') as f:
             st.session_state['data'] = json.load(f)
     except:
-        pass # Dosya bozuksa veya boşsa geç
+        pass # Dosya bozuksa geç
 
 # --- GİRİŞ EKRANI ---
 if st.session_state['step'] == 0:
@@ -223,7 +233,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
         up = st.file_uploader("Ders Videosu Seç (.mp4)", type=["mp4"])
         
         if up and st.button("Videoyu İşle ve Yayına Al"):
-            with st.spinner("Video işleniyor... (Tiny model kullanılıyor, daha hızlı!)"):
+            with st.spinner("Video işleniyor... (Tiny model kullanılıyor)"):
                 try:
                     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
                     tfile.write(up.read())
@@ -241,7 +251,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                     result = model_w.transcribe(audio_path)
                     full_text = result['text']
                     
-                    # 3. Gemini Analiz
+                    # 3. Gemini Analiz (DEBUG modunda çalışacak)
                     analysis = analyze_full_text_with_gemini(full_text)
                     
                     if analysis and len(analysis) > 0:
@@ -250,7 +260,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                         st.session_state['data'] = analysis
                         st.success("✅ Ders başarıyla işlendi ve yayına alındı!")
                     else:
-                        st.error("Gemini analizi boş döndü veya başarısız oldu.")
+                        st.error("Gemini analizi başarısız oldu (Yukarıdaki hata detayına bakın).")
                 except Exception as e:
                     st.error(f"Bir hata oluştu: {e}")
 
@@ -266,7 +276,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
             else:
                 st.info("Kayıt bulunamadı.")
 
-# --- ADIM 2: ÖĞRENCİ - ÖN TEST (GÜÇLENDİRİLMİŞ VERSİYON) ---
+# --- ADIM 2: ÖĞRENCİ - ÖN TEST ---
 elif st.session_state['step'] == 2:
     if not st.session_state['data']:
         st.warning("⚠️ Ders içeriği yüklenemedi. Öğretmeninizle görüşün.")
@@ -279,13 +289,11 @@ elif st.session_state['step'] == 2:
         with st.form("pre_test_form"):
             ans = {}
             for i, item in enumerate(st.session_state['data']):
-                # .get() kullanarak hata almayı engelliyoruz
                 q = item.get('soru_data', {})
                 soru_metni = q.get('soru', 'Soru yüklenemedi')
                 
                 st.write(f"**{i+1}.** {soru_metni}")
                 
-                # Şıklar
                 secenekler = [
                     q.get('A', 'A'), 
                     q.get('B', 'B'), 
@@ -302,11 +310,9 @@ elif st.session_state['step'] == 2:
                 
                 for i, item in enumerate(st.session_state['data']):
                     q = item.get('soru_data', {})
-                    # Doğru şıkkı bul (Büyük/Küçük harf duyarlılığını kaldır)
                     dogru_harf = q.get('dogru_sik', 'A').strip().upper()
                     dogru_metin = q.get(dogru_harf)
                     
-                    # Kullanıcı cevabı
                     verilen_cevap = ans.get(i)
                     
                     if verilen_cevap and verilen_cevap == dogru_metin:
@@ -326,7 +332,6 @@ elif st.session_state['step'] == 3:
     if st.session_state['mistakes']:
         st.warning("Eksik konular aşağıda listelenmiştir. Lütfen çalışın.")
         
-        # PDF İndirme Butonu
         if st.button("📄 Eksik Konuları PDF Olarak İndir"):
             pdf_bytes = create_study_pdf(st.session_state['data'], st.session_state['mistakes'])
             st.download_button(label="Çalışma Planını İndir", 
@@ -340,7 +345,6 @@ elif st.session_state['step'] == 3:
         
     st.markdown("---")
     
-    # İçerik Gösterimi
     for i, item in enumerate(st.session_state['data']):
         if i in st.session_state['mistakes']:
             st.error(f"Eksik Konu: {item.get('alt_baslik', 'Konu')}")
@@ -380,7 +384,6 @@ elif st.session_state['step'] == 4:
                 if ans.get(i) == dogru_metin:
                     score += 1
             
-            # Kaydet
             final_data = {
                 "ad_soyad": st.session_state['student_info']['name'],
                 "no": st.session_state['student_info']['no'],
