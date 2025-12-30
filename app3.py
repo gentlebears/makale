@@ -164,11 +164,24 @@ def load_whisper():
     return whisper.load_model("base", device="cpu")
 
 def sesi_sokup_al(video_path, audio_path):
+    # FFmpeg komutu
     command = ["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-y", audio_path]
-    try: 
-        subprocess.run(command, capture_output=True, text=True)
+    try:
+        # Komutu çalıştır
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        # Eğer FFmpeg hata koduyla dönerse (0 değilse) veya dosya oluşmazsa
+        if result.returncode != 0:
+            st.error(f"Video ses dönüştürme hatası (FFmpeg): {result.stderr}")
+            return False
+            
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            st.error("Ses dosyası oluşturulamadı veya boş.")
+            return False
+            
         return True
-    except: 
+    except Exception as e:
+        st.error(f"Sistem Hatası: {e}")
         return False
 
 def analyze_full_text_with_gemini(full_text):
@@ -491,3 +504,4 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score}")
+
