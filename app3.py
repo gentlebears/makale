@@ -419,16 +419,7 @@ elif st.session_state['step'] == 3:
     st.success(f"Ön Test Puanın: {st.session_state['scores']['pre']}")
     
     if st.session_state['mistakes']:
-        st.markdown(
-            f"""
-            <div style="padding: 15px; border-radius: 10px; background-color: rgba(255, 75, 75, 0.2); border: 1px solid #ff4b4b;">
-                <h4 style="margin:0; color: #ff4b4b;">⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var.</h4>
-                <p style="margin:0;">Aşağıdaki kırmızı başlıklı kartları inceleyip tekrar etmelisin.</p>
-            </div>
-            <br>
-            """, 
-            unsafe_allow_html=True
-        )
+        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Aşağıdaki kırmızı alanları incele.")
     else:
         st.balloons()
         st.success("🎉 Tebrikler! Hiç eksiğin yok.")
@@ -437,80 +428,74 @@ elif st.session_state['step'] == 3:
     pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
     pdf_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
 
-    # --- KONTROL PANELİ ---
+    # --- KONTROL PANELİ (SADE) ---
     with st.container(border=True):
-        st.markdown("### 🛠️ Çalışma Paneli")
         col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium", vertical_alignment="center")
         
         with col_pdf:
-            st.write("📄 **Planı İndir**")
+            st.markdown("### 📄 Planı İndir")
             c1, c2 = st.columns(2)
-            c1.download_button("📥 Özet", pdf_ozet, "Ozet.pdf", "application/pdf", use_container_width=True)
-            c2.download_button("📑 Detaylı", pdf_full, "Detayli.pdf", "application/pdf", use_container_width=True)
+            c1.download_button("📥 Özet İndir", pdf_ozet, "Ozet.pdf", "application/pdf", use_container_width=True)
+            c2.download_button("📑 Detaylı İndir", pdf_full, "Detayli.pdf", "application/pdf", use_container_width=True)
         
         with col_speed:
-            st.write("🎚️ **Ses Hızı**")
-            audio_speed = st.select_slider("Hız", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
+            st.markdown("### 🎚️ Hız")
+            audio_speed = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
 
         with col_next:
-            st.write("🚀 **Tamamla**")
+            st.markdown("### 🚀 Bitir")
             if st.button("Son Sınava Geç ➡️", use_container_width=True, type="primary"):
                 st.session_state['step'] = 4
                 st.rerun()
 
-    st.divider()
+    st.markdown("---")
+    st.markdown("### 📝 Konu Analizi ve Çalışma Listesi")
+    st.write("") # Boşluk
 
-    # --- KONU LİSTESİ (KART TASARIMI) ---
+    # --- KONU LİSTESİ (TAM KART TASARIMI) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # Kartın içine alıyoruz (border=True ile çerçeve)
-        with st.container(border=True):
-            
-            # 1. HTML İLE ÖZEL RENKLİ BAŞLIK OLUŞTURUYORUZ
-            if is_wrong:
-                # Kırmızı Arka Planlı Başlık
-                st.markdown(
-                    f"""
-                    <div style="background-color: rgba(255, 0, 0, 0.15); padding: 10px; border-radius: 5px; border-left: 5px solid #ff4b4b; margin-bottom: 10px;">
-                        <h4 style="color: #ff4b4b; margin:0;">❌ {item['alt_baslik']}</h4>
-                        <strong style="color: #ff4b4b;">⚠️ BU KONUDA EKSİĞİN VAR - TEKRAR ET</strong>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
-            else:
-                # Yeşil Arka Planlı Başlık
-                st.markdown(
-                    f"""
-                    <div style="background-color: rgba(0, 255, 0, 0.1); padding: 10px; border-radius: 5px; border-left: 5px solid #09ab3b; margin-bottom: 10px;">
-                        <h4 style="color: #09ab3b; margin:0;">✅ {item['alt_baslik']}</h4>
-                        <span style="color: #09ab3b;">Bu konuyu başarıyla tamamladın.</span>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
+        # 1. KUTU TÜRÜNÜ BELİRLE (BU SEFER "CONTAINER" GİBİ KULLANACAĞIZ)
+        # st.error veya st.success'i bir "with" bloğu olarak açıyoruz.
+        # Bu sayede içindeki HER ŞEY o rengin arka planına sahip oluyor.
+        
+        if is_wrong:
+            box_context = st.error(icon="❌") # Kırmızı ikonlu kutu
+            status_text = "🔴 **BU KONUDA EKSİĞİN VAR - LÜTFEN TEKRAR ET**"
+        else:
+            box_context = st.success(icon="✅") # Yeşil ikonlu kutu
+            status_text = "🟢 **Tamamlandı - Konuya Hakimsin**"
 
-            # 2. İÇERİK KISMI (Sütunlu Yapı)
-            c_text, c_audio = st.columns([4, 1], gap="small", vertical_alignment="center")
+        # 2. İÇERİĞİ KUTUNUN İÇİNE DÖŞE
+        with box_context:
+            # Başlık
+            st.subheader(item['alt_baslik'])
+            st.markdown(status_text)
             
-            with c_text:
-                st.markdown(f"**Özet:** {item['ozet']}")
+            st.divider() # İnce bir çizgi ile ayır
+            
+            # Sütunlu Yapı (Metin | Buton)
+            col_text, col_btn = st.columns([4, 1], gap="medium", vertical_alignment="center")
+            
+            with col_text:
+                st.markdown(f"**📖 Özet:** {item['ozet']}")
                 
-                # Ek Bilgi Varsa
+                # Ek Bilgi
                 ek_bilgi = item.get('ek_bilgi')
                 if ek_bilgi:
-                    with st.expander("📚 Akademik Ek Kaynak (Tıkla Oku)"):
-                        st.info(ek_bilgi)
-                        if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
-                            with st.spinner("Ek bilgi seslendiriliyor..."):
+                    with st.expander("📚 Akademik Ek Kaynak (Okumak için tıkla)"):
+                        st.info(ek_bilgi) # İç içe kutu, bilgi notu gibi durur
+                        if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
+                            with st.spinner(".."):
                                 path = generate_audio_openai(ek_bilgi, audio_speed)
                                 if path: st.audio(path, autoplay=True)
-
-            with c_audio:
-                # Buton
+            
+            with col_btn:
+                # Buton artık renkli kutunun içinde, sağda duruyor
+                st.write("") # Hizalama
                 if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
-                    with st.spinner("Özet seslendiriliyor..."):
+                    with st.spinner(".."):
                         path = generate_audio_openai(item['ozet'], audio_speed)
                         if path: st.audio(path, autoplay=True)
         st.write("---")
@@ -547,6 +532,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
