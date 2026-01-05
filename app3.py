@@ -419,10 +419,10 @@ elif st.session_state['step'] == 3:
     st.success(f"Ön Test Puanın: {st.session_state['scores']['pre']}")
     
     if st.session_state['mistakes']:
-        st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var. Aşağıdaki kırmızı ile işaretlenmiş konulara tekrar çalışmalısın.")
+        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Kırmızı kutulu alanları incele.")
     else:
         st.balloons()
-        st.success("Tebrikler! Hiç eksiğin yok. Tüm konuları başarıyla tamamladın.")
+        st.success("🎉 Tebrikler! Hiç eksiğin yok.")
 
     # --- PDFLERİ HAZIRLA ---
     pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
@@ -431,7 +431,7 @@ elif st.session_state['step'] == 3:
     # --- KONTROL PANELİ ---
     with st.container(border=True):
         st.markdown("### 🛠️ Çalışma Paneli")
-        col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium")
+        col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium", vertical_alignment="center")
         
         # 1. Sütun: PDF İndirmeler
         with col_pdf:
@@ -454,46 +454,41 @@ elif st.session_state['step'] == 3:
 
     st.divider()
 
-    # --- KONU LİSTESİ (YENİLENMİŞ TASARIM) ---
+    # --- KONU LİSTESİ (RENGİ VE HİZASI DÜZELTİLMİŞ) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # Renk ve Başlık Belirleme
+        # Kutu tipini ve başlığını belirle
         if is_wrong:
-            msg_box = st.error  # Kırmızı kutu
-            icon = "🔻"
-            title_text = f"{item['alt_baslik']} - [TEKRAR ET]" # TEKRAR ET eklendi
+            # Yanlışsa KIRMIZI KUTU (st.error)
+            box_type = st.error
+            header_text = f"❌ {item['alt_baslik']} - [TEKRAR ET BU KONUYU]"
         else:
-            msg_box = st.success # Yeşil kutu
-            icon = "✅"
-            title_text = f"{item['alt_baslik']} (Tamamlandı)"
+            # Doğruysa YEŞİL KUTU (st.success)
+            box_type = st.success
+            header_text = f"✅ {item['alt_baslik']} - (Tamamlandı)"
 
-        # Kutuyu oluştur
-        with msg_box(f"{icon} {title_text}"):
+        # TÜM İÇERİK RENKLİ KUTUNUN İÇİNDE OLACAK
+        with box_type(header_text):
             
-            # HİZALAMA İÇİN SÜTUNLAR: Metin (4 birim) | Buton (1 birim)
-            c_text, c_audio = st.columns([4, 1], gap="small")
+            # Hizalama: vertical_alignment="center" ile buton ve yazı ortalanır
+            c_text, c_audio = st.columns([4, 1], gap="small", vertical_alignment="center")
             
             with c_text:
-                # Özet Metni
                 st.markdown(f"**Özet:** {item['ozet']}")
                 
-                # Ek Bilgi (Varsa)
+                # Ek Bilgi Varsa
                 ek_bilgi = item.get('ek_bilgi')
                 if ek_bilgi:
-                    with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
+                    with st.expander("📚 Akademik Ek Kaynak (Tıkla Oku)"):
                         st.info(ek_bilgi)
-                        # Ek Bilgi Dinleme Butonu
                         if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
                             with st.spinner("Ek bilgi seslendiriliyor..."):
                                 path = generate_audio_openai(ek_bilgi, audio_speed)
                                 if path: st.audio(path, autoplay=True)
 
             with c_audio:
-                # HİZALAMA HİLESİ: Butonu metinle ortalamak için üstten biraz boşluk bırakıyoruz.
-                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-                
-                # Özet Dinleme Butonu (Sağda ve hizalı)
+                # Buton artık dikeyde ortalı
                 if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
                     with st.spinner("Özet seslendiriliyor..."):
                         path = generate_audio_openai(item['ozet'], audio_speed)
@@ -533,6 +528,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
