@@ -551,3 +551,4 @@ elif st.session_state['step'] == 4:
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
 
+
