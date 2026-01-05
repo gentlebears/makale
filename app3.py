@@ -17,7 +17,7 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Stable)", layout="wide")
+st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Final)", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
@@ -98,52 +98,49 @@ def get_class_data_from_firebase():
         st.error(f"Veri Çekme Hatası: {e}")
         return []
 
-# --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
-    # 1. Puanları Birleştir
+    # --- PUANLARI BİRLEŞTİR ---
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
-    elif 'on_test' in df.columns:
-        df['1. Test Doğru Sayısı'] = df['on_test']
-    elif 'on_test_puan' in df.columns:
-        df['1. Test Doğru Sayısı'] = df['on_test_puan']
-    else:
-        df['1. Test Doğru Sayısı'] = 0 
+    elif 'on_test' in df.columns: df['1. Test Doğru Sayısı'] = df['on_test']
+    elif 'on_test_puan' in df.columns: df['1. Test Doğru Sayısı'] = df['on_test_puan']
+    else: df['1. Test Doğru Sayısı'] = 0 
 
     if 'son_test_puan' in df.columns and 'son_test' in df.columns:
         df['2. Test Doğru Sayısı'] = df['son_test_puan'].combine_first(df['son_test'])
-    elif 'son_test' in df.columns:
-        df['2. Test Doğru Sayısı'] = df['son_test']
-    elif 'son_test_puan' in df.columns:
-        df['2. Test Doğru Sayısı'] = df['son_test_puan']
-    else:
-        df['2. Test Doğru Sayısı'] = 0
+    elif 'son_test' in df.columns: df['2. Test Doğru Sayısı'] = df['son_test']
+    elif 'son_test_puan' in df.columns: df['2. Test Doğru Sayısı'] = df['son_test_puan']
+    else: df['2. Test Doğru Sayısı'] = 0
 
-    # 2. None (Boş) Olanları 0 Yap
+    # --- SAYISAL DÖNÜŞÜM ---
     df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
     df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
-
-    # 3. NET Hesapla
     df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
 
-    # 4. İsimlendirmeleri Ayarla
+    # --- İSİMLERİ AYARLA ---
     if 'ad_soyad' in df.columns: df['Ad Soyad'] = df['ad_soyad']
     else: df['Ad Soyad'] = "Bilinmiyor"
-        
     if 'no' in df.columns: df['Öğrenci No'] = df['no']
     else: df['Öğrenci No'] = 0
 
-    # 5. Soru Sayısını Ayarla
-    final_count = soru_sayisi_input if soru_sayisi_input and soru_sayisi_input > 0 else 15
-    df['Soru Sayısı'] = final_count
-
-    target_columns = ['Ad Soyad', 'Öğrenci No', 'Soru Sayısı', '1. Test Doğru Sayısı', '2. Test Doğru Sayısı', 'NET']
+    # --- SORU SAYISI (KRİTİK KISIM BURASI) ---
+    # Eğer veritabanından gelen veride 'toplam_soru' varsa onu kullan.
+    # Yoksa varsayılan (o anki dersin sorusu) değerini kullan.
+    varsayilan = soru_sayisi_input if (soru_sayisi_input and soru_sayisi_input > 0) else 15
     
+    if 'toplam_soru' in df.columns:
+        df['Soru Sayısı'] = df['toplam_soru'].fillna(varsayilan).astype(int)
+    else:
+        df['Soru Sayısı'] = varsayilan
+
+    # --- TABLO SÜTUNLARINI SEÇ ---
+    target_columns = ['Ad Soyad', 'Öğrenci No', 'Soru Sayısı', '1. Test Doğru Sayısı', '2. Test Doğru Sayısı', 'NET']
     for col in target_columns:
         if col not in df.columns:
             df[col] = 0 if 'Sayısı' in col or 'NET' in col or 'No' in col else ""
 
     return df[target_columns]
+    
 
 # --- YARDIMCI FONKSİYONLAR ---
 def safe_text(text):
@@ -164,13 +161,9 @@ def load_whisper():
     return whisper.load_model("base", device="cpu")
 
 def sesi_sokup_al(video_path, audio_path):
-    # FFmpeg komutu
     command = ["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-y", audio_path]
     try:
-        # Komutu çalıştır
         result = subprocess.run(command, capture_output=True, text=True)
-        
-        # Eğer FFmpeg hata koduyla dönerse (0 değilse) veya dosya oluşmazsa
         if result.returncode != 0:
             st.error(f"Video ses dönüştürme hatası (FFmpeg): {result.stderr}")
             return False
@@ -377,9 +370,12 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
             if data_raw:
                 df_raw = pd.DataFrame(data_raw)
                 
-                # Dinamik Soru Sayısı ve Veri Düzeltme
-                mevcut_soru = len(st.session_state['data']) if st.session_state['data'] else 15
-                df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru)
+                # O anki yüklü dersin soru sayısını yedek (varsayılan) olarak alıyoruz
+                # 999 görürsen firebase kontrolü yap, hata ayıkla
+                varsayilan_soru = len(st.session_state['data']) if st.session_state['data'] else 999
+                
+                # Fonksiyonu çağırırken veritabanı öncelikli çalışacak
+                df_clean = format_data_for_csv(df_raw, soru_sayisi_input=varsayilan_soru)
                 
                 st.dataframe(df_clean, use_container_width=True)
                 
@@ -477,7 +473,7 @@ elif st.session_state['step'] == 3:
         
         st.write("---")
 
-# --- ADIM 4: SON TEST ---
+# --- ADIM 4: SON TEST (TOPLAM SORU EKLENDİ) ---
 elif st.session_state['step'] == 4:
     with st.form("post_test"):
         ans = {}
@@ -485,9 +481,7 @@ elif st.session_state['step'] == 4:
             q = item['soru_data']
             st.write(f"**{i+1})** {q['soru']}")
             
-            # Seçenekleri güvenli al
             secenekler = [q.get('A'), q.get('B'), q.get('C'), q.get('D')]
-            # None olan seçenekleri filtrele (Eğer AI boş şık üretirse hata vermesin)
             secenekler = [s for s in secenekler if s]
             
             ans[i] = st.radio("Cevap", secenekler, key=f"son_{i}", index=None)
@@ -497,25 +491,17 @@ elif st.session_state['step'] == 4:
             score = 0
             for i, item in enumerate(st.session_state['data']):
                 q = item['soru_data']
-                # Doğru şıkkı temizleyerek al ("A " -> "A")
-                dogru_harf = q['dogru_sik'].strip()
-                # O harfin metnini al
-                correct_text = q.get(dogru_harf)
-                
-                if ans.get(i) == correct_text: 
-                    score += 1
+                correct = q.get(q['dogru_sik'].strip())
+                if ans.get(i) == correct: score += 1
             
-            # GÜNCELLENMİŞ KAYIT YAPISI (Senin istediğin format)
             res = {
                 "ad_soyad": st.session_state['student_info'].get('name', 'Bilinmiyor'),
                 "no": st.session_state['student_info'].get('no', '0'),
                 "tarih": time.strftime("%Y-%m-%d %H:%M"),
                 "on_test": st.session_state['scores'].get('pre', 0),
                 "son_test": score,
-                "toplam_soru": len(st.session_state['data'])  # <-- EKLENDİ
+                "toplam_soru": len(st.session_state['data']) 
             }
-            
             if save_results_to_firebase(res):
                 st.balloons()
-                # İSTEDİĞİN MESAJ FORMATI
-                st.success(f"Tebrikler! Son Puan: {score} / {len(st.session_state['data'])}")
+                st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
