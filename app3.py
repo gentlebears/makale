@@ -152,7 +152,7 @@ def safe_text(text):
         ord('’'):"'", '‘':"'", '“':'"', '”':'"', '–':'-'
     }
     try:
-        return text.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+        return text.translate(tr_map).encoding('latin-1', 'replace').decode('latin-1')
     except:
         return text
 
@@ -544,6 +544,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
