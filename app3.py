@@ -419,7 +419,7 @@ elif st.session_state['step'] == 3:
     st.success(f"Ön Test Puanın: {st.session_state['scores']['pre']}")
     
     if st.session_state['mistakes']:
-        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Kırmızı alanları incele.")
+        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var.")
     else:
         st.balloons()
         st.success("🎉 Tebrikler! Hiç eksiğin yok.")
@@ -428,7 +428,7 @@ elif st.session_state['step'] == 3:
     pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
     pdf_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
 
-    # --- KONTROL PANELİ (Çerçeveli) ---
+    # --- KONTROL PANELİ ---
     with st.container(border=True):
         col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium")
         
@@ -451,44 +451,44 @@ elif st.session_state['step'] == 3:
     st.divider()
     st.markdown("### 📝 Konu Listesi")
 
-    # --- SADE VE NET TASARIM ---
+    # --- YENİ MANTIK: HERKES İÇİN ÖZET AÇIK, SADECE BAŞLIK RENGİ FARKLI ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # 1. BAŞLIK VE KUTU RENGİNİ BELİRLE
+        # 1. SADECE BAŞLIK KUTUSU DEĞİŞİR
         if is_wrong:
-            # HATA YOK: Metni direkt içine yazıyoruz.
-            # Kırmızı Kutu
-            box = st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]")
+            st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]")
         else:
-            # Yeşil Kutu
-            box = st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]")
+            st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]")
 
-        # 2. KUTUNUN İÇİNİ DOLDUR
-        with box:
-            # Metin solda (4 birim), Buton sağda (1 birim)
-            c_txt, c_btn = st.columns([4, 1])
+        # 2. İÇERİK YAPISI (HER İKİSİ İÇİN DE AYNI VE AÇIK)
+        col_txt, col_btn = st.columns([4, 1])
+        
+        with col_txt:
+            # Özet her zaman açık
+            st.write(f"**Özet:** {item['ozet']}")
             
-            with c_txt:
-                st.write(f"**Özet:** {item['ozet']}")
-                
-                # Ek Bilgi Varsa
-                ek_bilgi = item.get('ek_bilgi')
-                if ek_bilgi:
-                    with st.expander("📚 Ek Kaynak"):
-                        st.info(ek_bilgi)
-                        if st.button("🎧 Ek Bilgiyi Dinle", key=f"ed_{i}"):
-                             with st.spinner("."):
+            # Ek Bilgi her zaman gizli (Expander içinde)
+            ek_bilgi = item.get('ek_bilgi')
+            if ek_bilgi:
+                with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
+                    st.info(ek_bilgi)
+                    if st.button("🎧 Ek Bilgiyi Dinle", key=f"ed_{i}"):
+                            with st.spinner("."):
                                 p = generate_audio_openai(ek_bilgi, audio_speed)
                                 if p: st.audio(p, autoplay=True)
 
-            with c_btn:
-                st.write("") # Hizalama boşluğu
-                if st.button("🔊 Özeti Dinle", key=f"d_{i}", use_container_width=True):
-                    with st.spinner("."):
-                        p = generate_audio_openai(item['ozet'], audio_speed)
-                        if p: st.audio(p, autoplay=True
-        )
+        with col_btn:
+            st.write("") # Hizalama için
+            # Özet Dinleme Butonu her zaman açık
+            if st.button("🔊 Özeti Dinle", key=f"d_{i}", use_container_width=True):
+                with st.spinner("."):
+                    p = generate_audio_openai(item['ozet'], audio_speed)
+                    if p: st.audio(p, autoplay=True)
+        
+        st.divider() # Konular arasına çizgi
+
+        
 
         # 2. İÇERİK ETKİLEŞİMİ (Butonlar HTML içine giremez, hemen altına hizalayacağız)
         # Görsel olarak bütünlük sağlamak için butonları HTML kutusunun "devamıymış" gibi yerleştiriyoruz.
@@ -550,6 +550,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
