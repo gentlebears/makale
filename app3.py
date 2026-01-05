@@ -452,29 +452,25 @@ elif st.session_state['step'] == 3:
     st.markdown("### 📝 Konu Analizi ve Çalışma Listesi")
     st.write("") 
 
-    # --- KONU LİSTESİ (HATASI GİDERİLMİŞ KART TASARIMI) ---
+    # --- KONU LİSTESİ (SADELEŞTİRİLMİŞ) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # 1. KUTU TÜRÜNÜ VE METNİNİ BELİRLE
+        # icon parametresini kaldırdım, sadece metindeki emojiler yeterli.
         if is_wrong:
-            # Metni direkt fonksiyonun içine yazıyoruz (HATA BURADAYDI)
-            container = st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]", icon="⚠️")
+            container = st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]")
         else:
-            container = st.success(f"✅ {item['alt_baslik']} - (Tamamlandı)", icon="🎉")
+            container = st.success(f"✅ {item['alt_baslik']} - (Tamamlandı)")
 
-        # 2. İÇERİĞİ KUTUNUN İÇİNE DÖŞE
         with container:
-            # Sütunlu Yapı (Metin | Buton)
             col_text, col_btn = st.columns([4, 1], gap="medium", vertical_alignment="center")
             
             with col_text:
                 st.markdown(f"**📖 Özet:** {item['ozet']}")
                 
-                # Ek Bilgi
                 ek_bilgi = item.get('ek_bilgi')
                 if ek_bilgi:
-                    with st.expander("📚 Akademik Ek Kaynak (Okumak için tıkla)"):
+                    with st.expander("📚 Akademik Ek Kaynak"):
                         st.info(ek_bilgi) 
                         if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
                             with st.spinner(".."):
@@ -482,7 +478,6 @@ elif st.session_state['step'] == 3:
                                 if path: st.audio(path, autoplay=True)
             
             with col_btn:
-                # Buton
                 st.write("") 
                 if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
                     with st.spinner(".."):
@@ -522,6 +517,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
