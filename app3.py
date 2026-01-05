@@ -428,7 +428,7 @@ elif st.session_state['step'] == 3:
     pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
     pdf_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
 
-    # --- KONTROL PANELİ (SADE) ---
+    # --- KONTROL PANELİ ---
     with st.container(border=True):
         col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium", vertical_alignment="center")
         
@@ -450,31 +450,21 @@ elif st.session_state['step'] == 3:
 
     st.markdown("---")
     st.markdown("### 📝 Konu Analizi ve Çalışma Listesi")
-    st.write("") # Boşluk
+    st.write("") 
 
-    # --- KONU LİSTESİ (TAM KART TASARIMI) ---
+    # --- KONU LİSTESİ (HATASI GİDERİLMİŞ KART TASARIMI) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # 1. KUTU TÜRÜNÜ BELİRLE (BU SEFER "CONTAINER" GİBİ KULLANACAĞIZ)
-        # st.error veya st.success'i bir "with" bloğu olarak açıyoruz.
-        # Bu sayede içindeki HER ŞEY o rengin arka planına sahip oluyor.
-        
+        # 1. KUTU TÜRÜNÜ VE METNİNİ BELİRLE
         if is_wrong:
-            box_context = st.error(icon="❌") # Kırmızı ikonlu kutu
-            status_text = "🔴 **BU KONUDA EKSİĞİN VAR - LÜTFEN TEKRAR ET**"
+            # Metni direkt fonksiyonun içine yazıyoruz (HATA BURADAYDI)
+            container = st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]", icon="⚠️")
         else:
-            box_context = st.success(icon="✅") # Yeşil ikonlu kutu
-            status_text = "🟢 **Tamamlandı - Konuya Hakimsin**"
+            container = st.success(f"✅ {item['alt_baslik']} - (Tamamlandı)", icon="🎉")
 
         # 2. İÇERİĞİ KUTUNUN İÇİNE DÖŞE
-        with box_context:
-            # Başlık
-            st.subheader(item['alt_baslik'])
-            st.markdown(status_text)
-            
-            st.divider() # İnce bir çizgi ile ayır
-            
+        with container:
             # Sütunlu Yapı (Metin | Buton)
             col_text, col_btn = st.columns([4, 1], gap="medium", vertical_alignment="center")
             
@@ -485,15 +475,15 @@ elif st.session_state['step'] == 3:
                 ek_bilgi = item.get('ek_bilgi')
                 if ek_bilgi:
                     with st.expander("📚 Akademik Ek Kaynak (Okumak için tıkla)"):
-                        st.info(ek_bilgi) # İç içe kutu, bilgi notu gibi durur
+                        st.info(ek_bilgi) 
                         if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
                             with st.spinner(".."):
                                 path = generate_audio_openai(ek_bilgi, audio_speed)
                                 if path: st.audio(path, autoplay=True)
             
             with col_btn:
-                # Buton artık renkli kutunun içinde, sağda duruyor
-                st.write("") # Hizalama
+                # Buton
+                st.write("") 
                 if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
                     with st.spinner(".."):
                         path = generate_audio_openai(item['ozet'], audio_speed)
@@ -532,6 +522,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
