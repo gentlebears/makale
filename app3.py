@@ -451,7 +451,6 @@ elif st.session_state['step'] == 3:
     st.divider()
     st.markdown("### 📝 Konu Listesi")
 
-    # --- YENİ KART (CARD) TASARIMI ---
    # --- YENİ KART TASARIMI (Buton Altta) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
@@ -461,9 +460,9 @@ elif st.session_state['step'] == 3:
             
             # A) Başlık Alanı
             if is_wrong:
-                st.error(f"{item['alt_baslik']} - [TEKRAR ET]", icon="❌")
+                st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]", icon="⚠️")
             else:
-                st.success(f"{item['alt_baslik']} - [TAMAMLANDI]", icon="✅")
+                st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]", icon="🎉")
 
             # B) Özet Metni (Sütun kullanmadığımız için tam genişlik yayılır)
             st.markdown(f"**📖 Özet:** {item['ozet']}")
@@ -523,6 +522,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
