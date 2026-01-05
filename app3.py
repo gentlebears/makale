@@ -419,7 +419,7 @@ elif st.session_state['step'] == 3:
     st.success(f"Ön Test Puanın: {st.session_state['scores']['pre']}")
     
     if st.session_state['mistakes']:
-        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Aşağıdaki kırmızı alanları incele.")
+        st.warning(f"⚠️ Toplam {len(st.session_state['mistakes'])} konuda eksiğin var. Aşağıdaki kırmızı çerçeveli alanları incele.")
     else:
         st.balloons()
         st.success("🎉 Tebrikler! Hiç eksiğin yok.")
@@ -452,37 +452,73 @@ elif st.session_state['step'] == 3:
     st.markdown("### 📝 Konu Analizi ve Çalışma Listesi")
     st.write("") 
 
-    # --- KONU LİSTESİ (SADELEŞTİRİLMİŞ) ---
+    # --- ÖZEL HTML KUTU TASARIMI (CSS İLE ÇERÇEVE VE RENK) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # icon parametresini kaldırdım, sadece metindeki emojiler yeterli.
+        # Renk Kodlarını Belirle
         if is_wrong:
-            container = st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]")
+            border_color = "#ff4b4b"     # Kırmızı Çerçeve
+            bg_color = "rgba(255, 75, 75, 0.1)" # Çok hafif kırmızı arka plan
+            text_color = "#ff4b4b"       # Kırmızı Yazı Rengi
+            icon = "❌"
+            status = "[TEKRAR ET]"
         else:
-            container = st.success(f"✅ {item['alt_baslik']} - (Tamamlandı)")
+            border_color = "#09ab3b"     # Yeşil Çerçeve
+            bg_color = "rgba(9, 171, 59, 0.1)" # Çok hafif yeşil arka plan
+            text_color = "#09ab3b"       # Yeşil Yazı Rengi
+            icon = "✅"
+            status = "(Tamamlandı)"
 
-        with container:
-            col_text, col_btn = st.columns([4, 1], gap="medium", vertical_alignment="center")
-            
-            with col_text:
-                st.markdown(f"**📖 Özet:** {item['ozet']}")
-                
-                ek_bilgi = item.get('ek_bilgi')
-                if ek_bilgi:
-                    with st.expander("📚 Akademik Ek Kaynak"):
-                        st.info(ek_bilgi) 
-                        if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
-                            with st.spinner(".."):
-                                path = generate_audio_openai(ek_bilgi, audio_speed)
-                                if path: st.audio(path, autoplay=True)
-            
-            with col_btn:
-                st.write("") 
-                if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
-                    with st.spinner(".."):
-                        path = generate_audio_openai(item['ozet'], audio_speed)
-                        if path: st.audio(path, autoplay=True)
+        # 1. KUTUYU AÇ (st.container ile sarmalıyoruz ki butonlar içine girebilsin)
+        # Ancak görsel kısmı HTML ile çizeceğiz, butonları ise Streamlit ile koyacağız.
+        
+        # HTML Başlık ve Çerçeve Görünümü
+        st.markdown(
+            f"""
+            <div style="
+                border: 2px solid {border_color};
+                border-radius: 10px;
+                padding: 15px;
+                background-color: {bg_color};
+                margin-bottom: 10px;
+            ">
+                <h4 style="color: {text_color}; margin:0;">{icon} {item['alt_baslik']} <span style="font-size:0.8em;">{status}</span></h4>
+                <hr style="margin: 10px 0; border-color: {border_color}; opacity: 0.3;">
+                <p style="margin:0;">
+                    <strong style="color: {text_color};">Özet:</strong> {item['ozet']}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # 2. İÇERİK ETKİLEŞİMİ (Butonlar HTML içine giremez, hemen altına hizalayacağız)
+        # Görsel olarak bütünlük sağlamak için butonları HTML kutusunun "devamıymış" gibi yerleştiriyoruz.
+        
+        c_extra, c_audio = st.columns([4, 1])
+        
+        with c_extra:
+            # Ek Bilgi Varsa (Burada expander kullanıyoruz)
+            ek_bilgi = item.get('ek_bilgi')
+            if ek_bilgi:
+                with st.expander("📚 Akademik Ek Kaynak (Tıkla Oku)"):
+                    st.info(ek_bilgi) 
+                    if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
+                        with st.spinner(".."):
+                            path = generate_audio_openai(ek_bilgi, audio_speed)
+                            if path: st.audio(path, autoplay=True)
+        
+        with c_audio:
+            # Özet Dinleme Butonu (Yukarıdaki HTML özetin seslendirmesi)
+            if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
+                with st.spinner(".."):
+                    path = generate_audio_openai(item['ozet'], audio_speed)
+                    if path: st.audio(path, autoplay=True)
+        
+        # Bir sonraki kart ile araya boşluk koy
+        st.write("")
+        st.write("")
         st.write("---")
 
 # --- ADIM 4: SON TEST (TOPLAM SORU EKLENDİ) ---
@@ -517,6 +553,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
