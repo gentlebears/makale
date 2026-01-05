@@ -104,8 +104,6 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     else: df['Öğrenci No'] = 0
 
     # --- SORU SAYISI BELİRLEME MANTIĞI ---
-    # 1. Veritabanında 'toplam_soru' varsa onu kullan.
-    # 2. Yoksa, o anki dersin soru sayısını (varsayılan) kullan.
     varsayilan = soru_sayisi_input if (soru_sayisi_input and soru_sayisi_input > 0) else 15
     
     if 'toplam_soru' in df.columns:
@@ -119,15 +117,7 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     return df[target_columns]
 
 # --- FONKSİYONLAR ---
-def download_font():
-    font_path = "DejaVuSans.ttf"
-    if not os.path.exists(font_path):
-        try:
-            url = "https://github.com/google/fonts/raw/main/ofl/dejavusans/DejaVuSans.ttf"
-            r = requests.get(url)
-            with open(font_path, "wb") as f: f.write(r.content)
-        except: pass
-    return font_path
+# (Eski font indirme fonksiyonunu sildik, artık gerek yok)
 
 def safe_text(text):
     if text is None: return ""
@@ -172,15 +162,19 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
 
-# --- PDF SINIFI ---
+# --- PDF SINIFI (GÜNCELLENDİ) ---
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
-        self.font_path = download_font()
-        self.add_font('DejaVu', '', self.font_path, uni=True)
+        # GitHub'a yüklediğin dosyaları doğrudan kullanıyoruz.
+        # Regular (Normal) font
+        self.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
+        # Bold (Kalın) font - 'B' stiliyle eşleştirildi
+        self.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
 
     def header(self):
-        self.set_font('DejaVu', '', 14)
+        # Başlık için Bold kullanıyoruz
+        self.set_font('Roboto', 'B', 14)
         self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C'); self.ln(5)
 
     def topic_section(self, title, summary, extra, mistake, include_extra):
@@ -189,18 +183,26 @@ class PDF(FPDF):
         else:
             self.set_text_color(0, 100, 0); title = f"{title} (Tamamlandı)"
         
-        self.set_font('DejaVu', '', 12); self.cell(0, 10, title, ln=1)
-        self.set_text_color(0); self.set_font('DejaVu', '', 10); self.multi_cell(0, 6, summary); self.ln(2)
+        # Konu başlığı (BOLD)
+        self.set_font('Roboto', 'B', 12)
+        self.cell(0, 10, title, ln=1)
+        
+        # İçerik metni (NORMAL)
+        self.set_text_color(0)
+        self.set_font('Roboto', '', 10)
+        self.multi_cell(0, 6, summary); self.ln(2)
         
         if include_extra and extra:
-            self.set_text_color(80); self.set_font('DejaVu', '', 9)
+            self.set_text_color(80)
+            # Ek bilgi etiketi için hafif küçük
+            self.set_font('Roboto', '', 9)
             self.multi_cell(0, 6, f"[EK KAYNAK]: {extra}"); self.ln(2)
         
         self.set_draw_color(200); self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
 
 def create_pdf(data, mistakes, extra=True):
     pdf = PDF(); pdf.add_page(); pdf.set_auto_page_break(True, 15)
-    pdf.set_font("DejaVu", '', 10); pdf.set_text_color(100)
+    pdf.set_font("Roboto", '', 10); pdf.set_text_color(100)
     pdf.cell(0, 10, f"Rapor Türü: {'Detaylı' if extra else 'Özet'}", ln=1, align='C'); pdf.ln(5)
     for i, item in enumerate(data):
         pdf.topic_section(item['alt_baslik'], item['ozet'], item['ek_bilgi'], i in mistakes, extra)
