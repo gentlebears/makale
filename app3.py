@@ -2,11 +2,14 @@ import streamlit as st
 import whisper
 import os
 import tempfile
+import textwrap
 import google.generativeai as genai
 import json
 import subprocess
+import random
 import nest_asyncio
 import pandas as pd
+import numpy as np
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -14,7 +17,7 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu", layout="wide")
+st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Stable)", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
@@ -22,268 +25,497 @@ gemini_api_key = st.secrets["gemini_key"]
 openai_api_key = st.secrets["openai_key"]
 ADMIN_PASSWORD = st.secrets["admin_password"]
 
-# --- FIREBASE ---
+# --- FIREBASE BAĞLANTISI ---
 db = None 
+
 if not firebase_admin._apps:
     try:
         key_dict = dict(st.secrets["firebase"])
         key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
-    except: st.stop()
-try: db = firestore.client()
-except: pass
+    except Exception as e:
+        st.error(f"Firebase Bağlantı Hatası: {e}")
+        st.stop()
+
+try:
+    db = firestore.client()
+except Exception as e:
+    st.error(f"Veritabanı İstemcisi Hatası: {e}")
 
 # --- API BAĞLANTILARI ---
 client = None 
 try:
     genai.configure(api_key=gemini_api_key)
     client = OpenAI(api_key=openai_api_key)
-except: pass 
+except: 
+    pass 
 
-# --- BASİT STATE (Karmaşık yapı kaldırıldı) ---
-if 'step' not in st.session_state: st.session_state['step'] = 0
-if 'data' not in st.session_state: st.session_state['data'] = []
-if 'mistakes' not in st.session_state: st.session_state['mistakes'] = []
-if 'scores' not in st.session_state: st.session_state['scores'] = {'pre':0, 'post':0}
-if 'student_info' not in st.session_state: st.session_state['student_info'] = {}
+# --- STATE YÖNETİMİ ---
+def init_state():
+    defaults = {
+        'step': 0, 
+        'user_role': None, 
+        'student_info': {},
+        'scores': {'pre': 0, 'post': 0},
+        'pre_answers': {},
+        'user_answers_post': {},
+        'exam_finished': False,
+        'data': [],
+        'mistakes': [],
+        'audio_speed': 1.0 
+    }
+    for key, val in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
+
+init_state()
+
+# --- FIREBASE KAYIT ---
+def save_results_to_firebase(student_data):
+    if db is None:
+        st.error("Veritabanı bağlantısı yok!")
+        return False
+    try:
+        doc_ref = db.collection('exam_results').document(str(student_data['no']))
+        doc_ref.set(student_data)
+        return True
+    except Exception as e:
+        st.error(f"Veritabanı Hatası: {e}")
+        return False
+
+def get_class_data_from_firebase():
+    if db is None:
+        st.error("Veritabanı bağlantısı yok!")
+        return []
+    try:
+        docs = db.collection('exam_results').stream()
+        data = []
+        for doc in docs:
+            data.append(doc.to_dict())
+        return data
+    except Exception as e:
+        st.error(f"Veri Çekme Hatası: {e}")
+        return []
+
+# --- VERİ DÜZELTME MOTORU ---
+def format_data_for_csv(df, soru_sayisi_input=None):
+    # 1. Puanları Birleştir
+    if 'on_test_puan' in df.columns and 'on_test' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
+    elif 'on_test' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test']
+    elif 'on_test_puan' in df.columns:
+        df['1. Test Doğru Sayısı'] = df['on_test_puan']
+    else:
+        df['1. Test Doğru Sayısı'] = 0 
+
+    if 'son_test_puan' in df.columns and 'son_test' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test_puan'].combine_first(df['son_test'])
+    elif 'son_test' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test']
+    elif 'son_test_puan' in df.columns:
+        df['2. Test Doğru Sayısı'] = df['son_test_puan']
+    else:
+        df['2. Test Doğru Sayısı'] = 0
+
+    # 2. None (Boş) Olanları 0 Yap
+    df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
+    df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
+
+    # 3. NET Hesapla
+    df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
+
+    # 4. İsimlendirmeleri Ayarla
+    if 'ad_soyad' in df.columns: df['Ad Soyad'] = df['ad_soyad']
+    else: df['Ad Soyad'] = "Bilinmiyor"
+        
+    if 'no' in df.columns: df['Öğrenci No'] = df['no']
+    else: df['Öğrenci No'] = 0
+
+    # 5. Soru Sayısını Ayarla
+    final_count = soru_sayisi_input if soru_sayisi_input and soru_sayisi_input > 0 else 15
+    df['Soru Sayısı'] = final_count
+
+    target_columns = ['Ad Soyad', 'Öğrenci No', 'Soru Sayısı', '1. Test Doğru Sayısı', '2. Test Doğru Sayısı', 'NET']
+    
+    for col in target_columns:
+        if col not in df.columns:
+            df[col] = 0 if 'Sayısı' in col or 'NET' in col or 'No' in col else ""
+
+    return df[target_columns]
 
 # --- YARDIMCI FONKSİYONLAR ---
-def save_results(data):
-    if db:
-        try: db.collection('exam_results').document(str(data['no'])).set(data); return True
-        except: return False
-    return False
-
-def get_results():
-    if db:
-        try: return [d.to_dict() for d in db.collection('exam_results').stream()]
-        except: return []
-    return []
+def safe_text(text):
+    if text is None: return ""
+    tr_map = {
+        ord('ı'):'i', ord('İ'):'I', ord('ğ'):'g', ord('Ğ'):'G', 
+        ord('ü'):'u', ord('Ü'):'U', ord('ş'):'s', ord('Ş'):'S', 
+        ord('ö'):'o', ord('Ö'):'O', ord('ç'):'c', ord('Ç'):'C',
+        ord('’'):"'", '‘':"'", '“':'"', '”':'"', '–':'-'
+    }
+    try:
+        return text.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+    except:
+        return text
 
 @st.cache_resource
-def load_whisper(): return whisper.load_model("base", device="cpu")
+def load_whisper():
+    return whisper.load_model("base", device="cpu")
 
-def audio_extract(video, audio):
-    cmd = ["ffmpeg", "-i", video, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-y", audio]
-    try: subprocess.run(cmd, capture_output=True); return True
-    except: return False
-
-def analyze_text(text):
+def sesi_sokup_al(video_path, audio_path):
+    # FFmpeg komutu
+    command = ["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-y", audio_path]
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = f"""
-        Video metnini analiz et.
-        Çıktı JSON formatında olmalı: [{{ "alt_baslik": "...", "ozet": "...", "ek_bilgi": "...", "soru_data": {{ "soru": "...", "A": "...", "B": "...", "C": "...", "D": "...", "dogru_sik": "A" }} }}]
-        METİN: {text[:15000]}
-        """
-        res = model.generate_content(prompt)
-        clean = res.text.replace("```json", "").replace("```", "").strip()
-        s, e = clean.find('['), clean.rfind(']') + 1
-        return json.loads(clean[s:e])
-    except: return []
+        # Komutu çalıştır
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        # Eğer FFmpeg hata koduyla dönerse (0 değilse) veya dosya oluşmazsa
+        if result.returncode != 0:
+            st.error(f"Video ses dönüştürme hatası (FFmpeg): {result.stderr}")
+            return False
+            
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            st.error("Ses dosyası oluşturulamadı veya boş.")
+            return False
+            
+        return True
+    except Exception as e:
+        st.error(f"Sistem Hatası: {e}")
+        return False
 
-def tts(text):
-    if not client: return None
+def analyze_full_text_with_gemini(full_text):
+    primary_model = "gemini-2.5-flash"
+    fallback_model = "gemini-2.0-flash"
+    
+    model = None
     try:
-        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        res = client.audio.speech.create(model="tts-1", voice="alloy", input=text)
-        res.stream_to_file(tf.name)
-        return tf.name
+        model = genai.GenerativeModel(primary_model)
+        model.generate_content("test") 
+    except:
+        st.warning(f"⚠️ {primary_model} yanıt vermedi, {fallback_model} kullanılıyor.")
+        model = genai.GenerativeModel(fallback_model)
+
+    if len(full_text) < 50: return []
+
+    prompt = f"""
+    Sen uzman bir eğitim asistanısın. Video transkriptini analiz et.
+    
+    GÖREVLER:
+    1. Konuyu alt başlıklara böl.
+    2. Her başlık için video içeriğinden bir ÖZET çıkar.
+    3. [KRİTİK] Her başlık için, videoda geçmese bile, o konuyu akademik olarak destekleyen EK BİLGİ (Extra Resource) ekle.
+    4. Her başlık için bir test sorusu yaz.
+
+    Çıktı JSON Formatı:
+    [
+      {{
+        "alt_baslik": "Konu Başlığı",
+        "ozet": "Video özeti...",
+        "ek_bilgi": "Akademik ve teknik detay bilgi...",
+        "soru_data": {{
+            "soru": "Soru?",
+            "A": "...", "B": "...", "C": "...", "D": "...",
+            "dogru_sik": "A"
+        }}
+      }}
+    ]
+    METİN: "{full_text}"
+    """
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.replace("```json", "").replace("```", "").strip()
+        start = text.find('[')
+        end = text.rfind(']') + 1
+        return json.loads(text[start:end])
+    except Exception as e:
+        st.error(f"AI Hatası: {e}")
+        return []
+
+def generate_audio_openai(text, speed):
+    if not client or len(text) < 2: return None
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tfile.close()
+    try:
+        response = client.audio.speech.create(model="tts-1", voice="alloy", input=text, speed=speed)
+        response.stream_to_file(tfile.name)
+        return tfile.name
     except: return None
-
-# --- GÜVENLİ PDF (Çökme Önleyici) ---
+    
+# --- PDF OLUŞTURUCU ---
 class PDF(FPDF):
     def header(self):
-        try: 
-            # Font varsa kullan, yoksa hata verme Arial kullan
-            self.set_font('Roboto', 'B', 14)
-        except:
-            self.set_font('Arial', 'B', 14)
-        self.cell(0, 10, 'Calisma Plani', 0, 1, 'C'); self.ln(5)
+        self.set_font('Arial', 'B', 15)
+        self.cell(0, 10, 'Kisisellestirilmis Calisma Plani', 0, 1, 'C')
+        self.ln(5)
 
-    def topic(self, title, body, extra, wrong):
-        # Başlık Rengi
-        if wrong: self.set_text_color(200,0,0); title = f"(!) {title}"
-        else: self.set_text_color(0,100,0)
+    def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
+        if is_mistake:
+            self.set_text_color(200, 0, 0)
+            title = f"(!) {title} - [TEKRAR ET]"
+        else:
+            self.set_text_color(0, 100, 0)
+            title = f"{title} (Tamamlandi)"
+            
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, safe_text(title), ln=1)
         
-        # Başlık Fontu
-        try: self.set_font('Roboto', 'B', 12)
-        except: self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, title, ln=1)
-        
-        # İçerik Rengi ve Fontu
         self.set_text_color(0)
-        try: self.set_font('Roboto', '', 10)
-        except: self.set_font('Arial', '', 10)
-        self.multi_cell(0, 6, body); self.ln(2)
+        self.set_font('Arial', '', 11)
+        self.multi_cell(0, 6, safe_text(summary))
+        self.ln(2)
         
-        # Ek Bilgi
-        if extra:
-            self.set_text_color(80)
-            self.multi_cell(0, 6, f"EK: {extra}"); self.ln(2)
-        self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
+        if include_extra and extra_info:
+            self.set_text_color(80, 80, 80)
+            self.set_font('Arial', 'I', 10)
+            self.multi_cell(0, 6, safe_text(f"[EK KAYNAK]: {extra_info}"))
+            self.ln(2)
+            
+        self.set_draw_color(200, 200, 200)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(5)
 
-@st.cache_data(show_spinner=False)
-def make_pdf(data, mistakes, detailed=False):
+def create_study_pdf(data, mistakes, include_extra=True):
     pdf = PDF()
-    
-    # FONT YÜKLEME (HATA OLURSA GEÇ)
-    try:
-        base = os.path.dirname(os.path.abspath(__file__))
-        pdf.add_font('Roboto', '', os.path.join(base, 'Roboto-Regular.ttf'), uni=True)
-        pdf.add_font('Roboto', 'B', os.path.join(base, 'Roboto-Bold.ttf'), uni=True)
-    except: pass # Font yüklenemezse varsayılan fontlar çalışır
-    
     pdf.add_page()
-    for i, d in enumerate(data):
-        pdf.topic(d['alt_baslik'], d['ozet'], d['ek_bilgi'] if detailed else "", i in mistakes)
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    pdf.set_font("Arial", 'I', 10)
+    pdf.set_text_color(100, 100, 100)
+    type_str = "Detayli Rapor (Ek Kaynakli)" if include_extra else "Ozet Rapor"
+    pdf.cell(0, 10, safe_text(f"Rapor Turu: {type_str}"), ln=1, align='C')
+    pdf.ln(5)
+    
+    for i, item in enumerate(data):
+        baslik = item.get('alt_baslik', 'Konu')
+        ozet = item.get('ozet', '')
+        ek_bilgi = item.get('ek_bilgi', '')
+        is_mistake = i in mistakes
+        
+        pdf.topic_section(baslik, ozet, ek_bilgi, is_mistake, include_extra)
+        
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
-# ================= ARAYÜZ =================
-st.title("📚 Eğitim Platformu")
+# ================= ARAYÜZ (SADE VE 2 SEKMELİ ADMIN) =================
 
-# STEP 0: GİRİŞ
+st.title("☁️ Gemini Eğitim Platformu (Cloud v4 Stable)")
+
+LESSON_FILE = "lesson_data.json"
+
+if os.path.exists(LESSON_FILE) and not st.session_state['data']:
+    try:
+        with open(LESSON_FILE, 'r', encoding='utf-8') as f:
+            st.session_state['data'] = json.load(f)
+    except: pass
+
+# --- GİRİŞ EKRANI ---
 if st.session_state['step'] == 0:
-    t1, t2 = st.tabs(["Öğrenci", "Yönetici"])
-    with t1:
-        n = st.text_input("Ad Soyad")
-        no = st.text_input("No")
-        if st.button("Başla") and n and no:
-            # Json dosyasını kontrol et
-            if os.path.exists("lesson_data.json"):
-                with open("lesson_data.json", "r", encoding="utf-8") as f:
-                    st.session_state['data'] = json.load(f)
-                st.session_state['student_info'] = {'name':n, 'no':no}
-                st.session_state['step'] = 2
-                st.rerun()
-            else: st.error("Ders verisi bulunamadı.")
-    with t2:
-        if st.text_input("Şifre", type="password") == ADMIN_PASSWORD and st.button("Gir"):
-            st.session_state['step'] = 1; st.rerun()
-
-# STEP 1: YÖNETİCİ
-elif st.session_state['step'] == 1:
-    up = st.file_uploader("Video Yükle (.mp4)", ["mp4"])
-    if up and st.button("Analiz Et"):
-        with st.spinner("İşleniyor..."):
-            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4"); tf.write(up.read())
-            aud = tf.name.replace(".mp4", ".mp3")
-            if audio_extract(tf.name, aud):
-                w = load_whisper(); txt = w.transcribe(aud)['text']
-                data = analyze_text(txt)
-                if data:
-                    with open("lesson_data.json", "w", encoding="utf-8") as f: json.dump(data, f)
-                    st.session_state['data'] = data; st.success("Ders Hazır!")
+    tab1, tab2 = st.tabs(["👨‍🎓 Öğrenci Girişi", "👨‍🏫 Öğretmen Paneli"])
     
-    if st.button("Sonuçları İndir"):
-        res = get_results()
-        if res:
-            df = pd.DataFrame(res)
-            st.dataframe(df)
-            st.download_button("CSV", df.to_csv(), "sonuc.csv")
+    with tab1:
+        st.subheader("Öğrenci Girişi")
+        s_name = st.text_input("Ad Soyad")
+        s_no = st.text_input("Öğrenci No")
+        if st.button("Sınava Başla"):
+            if s_name and s_no:
+                if not st.session_state['data']:
+                    st.error("Ders bulunamadı.")
+                else:
+                    st.session_state['student_info'] = {'name': s_name, 'no': s_no}
+                    st.session_state['user_role'] = 'student'
+                    st.session_state['step'] = 2 
+                    st.rerun()
+            else: st.warning("Bilgileri giriniz.")
 
-# STEP 2: ÖN TEST
+    with tab2:
+        st.subheader("Öğretmen Girişi")
+        pwd = st.text_input("Şifre", type="password")
+        if st.button("Giriş"):
+            if pwd == ADMIN_PASSWORD:
+                st.session_state['user_role'] = 'admin'
+                st.session_state['step'] = 1
+                st.rerun()
+            else: st.error("Hatalı Şifre")
+
+# --- ADIM 1: YÖNETİCİ PANELİ (2 SEKMELİ) ---
+elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
+    st.header("Yönetici Paneli")
+    
+    # İki sekme oluşturuyoruz: Video Yükleme ve Sonuçlar
+    tab_upload, tab_results = st.tabs(["📚 Ders İşle / Video Yükle", "📊 Sınav Sonuçları"])
+    
+    # 1. SEKME: VİDEO YÜKLEME
+    with tab_upload:
+        st.subheader("Yeni Ders İçeriği Yükle")
+        up = st.file_uploader("Video (.mp4)", type=["mp4"])
+        if up and st.button("Dersi İşle"):
+            with st.spinner("Yapay zeka çalışıyor..."):
+                try:
+                    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    tfile.write(up.read())
+                    audio_path = tfile.name.replace(".mp4", ".mp3")
+                    
+                    if sesi_sokup_al(tfile.name, audio_path):
+                        model_w = load_whisper()
+                        res = model_w.transcribe(audio_path)
+                        analysis = analyze_full_text_with_gemini(res['text'])
+                        
+                        if analysis:
+                            with open(LESSON_FILE, 'w', encoding='utf-8') as f:
+                                json.dump(analysis, f, ensure_ascii=False)
+                            st.session_state['data'] = analysis
+                            st.success("Ders hazırlandı!")
+                        else: st.error("AI Yanıt Vermedi.")
+                    else: st.error("Ses ayrıştırılamadı.")
+                except Exception as e: st.error(str(e))
+    
+    # 2. SEKME: SINAV SONUÇLARI
+    with tab_results:
+        st.subheader("Öğrenci Sınav Sonuçları")
+        if st.button("Sonuçları Gör / Yenile"):
+            data_raw = get_class_data_from_firebase()
+            if data_raw:
+                df_raw = pd.DataFrame(data_raw)
+                
+                # Dinamik Soru Sayısı ve Veri Düzeltme
+                mevcut_soru = len(st.session_state['data']) if st.session_state['data'] else 15
+                df_clean = format_data_for_csv(df_raw, soru_sayisi_input=mevcut_soru)
+                
+                st.dataframe(df_clean, use_container_width=True)
+                
+                csv = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 Tabloyu Excel (CSV) Olarak İndir",
+                    data=csv,
+                    file_name="ogrenci_sinav_sonuclari.csv",
+                    mime="text/csv"
+                )
+            else: 
+                st.info("Henüz veritabanında sonuç yok.")
+
+# --- ADIM 2: ÖN TEST ---
 elif st.session_state['step'] == 2:
-    st.info("Lütfen Soruları Cevaplayınız")
-    with st.form("test1"):
+    st.info(f"Merhaba {st.session_state['student_info']['name']}, sınava hoşgeldin.")
+    with st.form("pre_test"):
         ans = {}
-        for i, d in enumerate(st.session_state['data']):
-            q = d['soru_data']
+        for i, item in enumerate(st.session_state['data']):
+            q = item['soru_data']
             st.write(f"**{i+1})** {q['soru']}")
-            ans[i] = st.radio("", [q['A'],q['B'],q['C'],q['D']], key=f"q{i}")
-            st.divider()
+            ans[i] = st.radio("Cevap", [q['A'], q['B'], q['C'], q['D']], key=f"p_{i}", index=None)
+            st.write("---")
+        
         if st.form_submit_button("Testi Bitir"):
-            sc, mis = 0, []
-            for i, d in enumerate(st.session_state['data']):
-                if ans[i] == d['soru_data'][d['soru_data']['dogru_sik']]: sc += 1
-                else: mis.append(i)
-            st.session_state['scores']['pre'] = sc
-            st.session_state['mistakes'] = mis
+            score = 0
+            mistakes = []
+            for i, item in enumerate(st.session_state['data']):
+                q = item['soru_data']
+                correct = q[q['dogru_sik'].strip()]
+                if ans.get(i) == correct: score += 1
+                else: mistakes.append(i)
+            
+            st.session_state['scores']['pre'] = score
+            st.session_state['mistakes'] = mistakes
             st.session_state['step'] = 3
             st.rerun()
 
-# STEP 3: ÇALIŞMA EKRANI (Sorunlu kısım burasıydı - Sadeleştirildi)
+# --- ADIM 3: ÇALIŞMA ---
 elif st.session_state['step'] == 3:
-    st.metric("İlk Test Puanı", st.session_state['scores']['pre'])
+    st.success(f"Puan: {st.session_state['scores']['pre']}")
     
-    # PDF İNDİRME ALANI (Try-Except ile korumalı)
-    c1, c2, c3 = st.columns(3)
-    try:
-        pdf_ozet = make_pdf(st.session_state['data'], st.session_state['mistakes'], False)
-        c1.download_button("📥 Özet İndir", pdf_ozet, "Ozet.pdf", "application/pdf")
+    if st.session_state['mistakes']:
+        st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var.")
         
-        pdf_detay = make_pdf(st.session_state['data'], st.session_state['mistakes'], True)
-        c2.download_button("📑 Detaylı İndir", pdf_detay, "Detayli.pdf", "application/pdf")
-    except:
-        st.error("PDF oluşturulamadı.")
-    
-    c3.button("Son Teste Geç ➡️", on_click=lambda: st.session_state.update({'step': 4}))
+        col1, col2 = st.columns(2)
+        with col1:
+            # Sadece Özet İndir
+            pdf_data_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
+            st.download_button("📥 Planı İndir (Sadece Özet)", pdf_data_ozet, "Calisma_Plani_Ozet.pdf", "application/pdf")
+        with col2:
+            # Geniş Kaynaklı İndir
+            pdf_data_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
+            st.download_button("📥 Planı İndir (Detaylı/Ek Kaynaklı)", pdf_data_full, "Calisma_Plani_Detayli.pdf", "application/pdf")
+
+    else:
+        st.balloons()
+        st.success("Tebrikler! Hiç eksiğin yok. Yine de konuları tekrar edebilirsin.")
+
+    if st.button("Son Sınava Geç ➡️"):
+        st.session_state['step'] = 4
+        st.rerun()
 
     st.divider()
-    
-    # İÇERİK LİSTESİ
-    for i, d in enumerate(st.session_state['data']):
-        err = i in st.session_state['mistakes']
-        box = st.error if err else st.success
+    col_s1, col_s2 = st.columns([1, 4])
+    with col_s1: st.markdown("### 🎚️ Hız:")
+    with col_s2: 
+        audio_speed = st.select_slider("", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
+    st.divider()
+
+    for i, item in enumerate(st.session_state['data']):
+        is_wrong = i in st.session_state['mistakes']
         
-        with box(f"{'Eksik Konu: ' if err else 'Tamam: '} {d['alt_baslik']}"):
-            # 1. ÖZET
-            c_txt, c_btn = st.columns([8, 1])
-            c_txt.write(f"**Özet:** {d['ozet']}")
-            if c_btn.button("🔊", key=f"s{i}"): # Basit buton
-                 p = tts(d['ozet'])
-                 if p: st.audio(p, autoplay=True)
+        if is_wrong:
+            st.error(f"🔻 {item['alt_baslik']} (Eksik Konu)")
+            st.write(f"**Özet:** {item['ozet']}")
+            
+            ek_bilgi = item.get('ek_bilgi')
+            if ek_bilgi:
+                with st.expander("📚 Akademik Ek Kaynak (Okuman Önerilir)"):
+                    st.info(ek_bilgi)
+                    if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
+                        with st.spinner("Okunuyor..."):
+                            path = generate_audio_openai(ek_bilgi, audio_speed)
+                            if path: st.audio(path)
+        else:
+            st.success(f"✅ {item['alt_baslik']} (Tamamlandı)")
+            with st.expander("Konu Özetini Gör"):
+                st.write(item['ozet'])
+        
+        if st.button(f"🔊 Özeti Dinle", key=f"dinle_{i}"):
+            with st.spinner("Seslendiriliyor..."):
+                path = generate_audio_openai(item['ozet'], audio_speed)
+                if path: st.audio(path)
+        
+        st.write("---")
 
-            # 2. EK BİLGİ (Expander içinde)
-            with st.expander("Ek Bilgi ve Kaynak"):
-                ce_txt, ce_btn = st.columns([8, 1])
-                ce_txt.info(d['ek_bilgi'])
-                if ce_btn.button("🎧", key=f"e{i}"): # Basit buton
-                    p = tts(d['ek_bilgi'])
-                    if p: st.audio(p, autoplay=True)
-
-# STEP 4: SON TEST (HATA DÜZELTİLMİŞ HALİ)
+# --- ADIM 4: SON TEST ---
 elif st.session_state['step'] == 4:
-    with st.form("test2"):
+    with st.form("post_test"):
         ans = {}
-        for i, d in enumerate(st.session_state['data']):
-            q = d['soru_data']
+        for i, item in enumerate(st.session_state['data']):
+            q = item['soru_data']
             st.write(f"**{i+1})** {q['soru']}")
-            # Radyo butonu seçenekleri
-            secenekler = [q.get('A',''), q.get('B',''), q.get('C',''), q.get('D','')]
-            # Boş seçenekleri filtrele (Hata önleyici)
-            secenekler = [s for s in secenekler if s] 
             
-            ans[i] = st.radio("", secenekler, key=f"q2{i}")
-            st.divider()
+            # Seçenekleri güvenli al
+            secenekler = [q.get('A'), q.get('B'), q.get('C'), q.get('D')]
+            # None olan seçenekleri filtrele (Eğer AI boş şık üretirse hata vermesin)
+            secenekler = [s for s in secenekler if s]
             
-        if st.form_submit_button("Tamamla"):
-            sc = 0
-            for i, d in enumerate(st.session_state['data']):
-                try:
-                    # 1. Doğru şıkkın harfini al ve temizle (örn: "A " -> "A")
-                    dogru_sik_harfi = d['soru_data']['dogru_sik'].strip()
-                    
-                    # 2. O harfin metnini al
-                    dogru_cevap_metni = d['soru_data'][dogru_sik_harfi]
-                    
-                    # 3. Kullanıcının cevabıyla karşılaştır
-                    if ans.get(i) == dogru_cevap_metni:
-                        sc += 1
-                except:
-                    # Eğer veri bozuksa veya key bulunamazsa puan verme ama çökme
-                    pass
+            ans[i] = st.radio("Cevap", secenekler, key=f"son_{i}", index=None)
+            st.write("---")
+        
+        if st.form_submit_button("Sınavı Bitir"):
+            score = 0
+            for i, item in enumerate(st.session_state['data']):
+                q = item['soru_data']
+                # Doğru şıkkı temizleyerek al ("A " -> "A")
+                dogru_harf = q['dogru_sik'].strip()
+                # O harfin metnini al
+                correct_text = q.get(dogru_harf)
+                
+                if ans.get(i) == correct_text: 
+                    score += 1
             
-            # Kaydet
+            # GÜNCELLENMİŞ KAYIT YAPISI (Senin istediğin format)
             res = {
                 "ad_soyad": st.session_state['student_info'].get('name', 'Bilinmiyor'),
                 "no": st.session_state['student_info'].get('no', '0'),
+                "tarih": time.strftime("%Y-%m-%d %H:%M"),
                 "on_test": st.session_state['scores'].get('pre', 0),
-                "son_test": sc,
-                "toplam_soru": len(st.session_state['data']),
-                "tarih": time.strftime("%Y-%m-%d %H:%M")
+                "son_test": score,
+                "toplam_soru": len(st.session_state['data'])  # <-- EKLENDİ
             }
-            save_results(res)
-            st.balloons()
-            st.success(f"Tebrikler! Son Puan: {sc} / {len(st.session_state['data'])}")
+            
+            if save_results_to_firebase(res):
+                st.balloons()
+                # İSTEDİĞİN MESAJ FORMATI
+                st.success(f"Tebrikler! Son Puan: {score} / {len(st.session_state['data'])}")
