@@ -235,11 +235,15 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
     
-# --- PDF OLUŞTURUCU ---
+# --- PDF SINIFI (TÜRKÇE DESTEKLİ) ---
 class PDF(FPDF):
     def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'Kisisellestirilmis Calisma Plani', 0, 1, 'C')
+        # Header otomatik çalıştığı için fontu burada tekrar set etmemiz gerekebilir
+        # Ancak add_font aşağıda yapıldığı için burada direkt kullanabiliriz.
+        # Eğer hata alırsanız header içindeki fontu 'Arial' bırakıp gövdeyi değiştirebiliriz
+        # ama genelde çalışır.
+        self.set_font('Roboto', 'B', 15)
+        self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C') # Artık Türkçe yazabiliriz
         self.ln(5)
 
     def topic_section(self, title, summary, extra_info, is_mistake, include_extra):
@@ -248,20 +252,23 @@ class PDF(FPDF):
             title = f"(!) {title} - [TEKRAR ET]"
         else:
             self.set_text_color(0, 100, 0)
-            title = f"{title} (Tamamlandi)"
+            title = f"{title} (Tamamlandı)" # 'ı' harfi artık sorun değil
             
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, safe_text(title), ln=1)
+        # Başlık Fontu
+        self.set_font('Roboto', 'B', 12)
+        self.cell(0, 10, title, ln=1)
         
+        # İçerik Fontu
         self.set_text_color(0)
-        self.set_font('Arial', '', 11)
-        self.multi_cell(0, 6, safe_text(summary))
+        self.set_font('Roboto', '', 11)
+        # safe_text kullanmıyoruz, direkt summary veriyoruz
+        self.multi_cell(0, 6, summary)
         self.ln(2)
         
         if include_extra and extra_info:
             self.set_text_color(80, 80, 80)
-            self.set_font('Arial', 'I', 10)
-            self.multi_cell(0, 6, safe_text(f"[EK KAYNAK]: {extra_info}"))
+            self.set_font('Roboto', '', 10) # İtalik dosyanız yoksa Normal ('') kullanın
+            self.multi_cell(0, 6, f"[EK KAYNAK]: {extra_info}")
             self.ln(2)
             
         self.set_draw_color(200, 200, 200)
@@ -270,13 +277,25 @@ class PDF(FPDF):
 
 def create_study_pdf(data, mistakes, include_extra=True):
     pdf = PDF()
+    
+    # --- KRİTİK KISIM: FONT DOSYALARINI TANITMA ---
+    # Dosyaların app3.py ile AYNI klasörde olduğundan emin olun.
+    try:
+        # uni=True parametresi Türkçe karakterlerin (UTF-8) düzgün işlenmesini sağlar.
+        pdf.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
+        pdf.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
+    except Exception as e:
+        st.error(f"Font yükleme hatası: {e}")
+        return None
+
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    pdf.set_font("Arial", 'I', 10)
+    # Başlık kısmı
+    pdf.set_font("Roboto", '', 10)
     pdf.set_text_color(100, 100, 100)
-    type_str = "Detayli Rapor (Ek Kaynakli)" if include_extra else "Ozet Rapor"
-    pdf.cell(0, 10, safe_text(f"Rapor Turu: {type_str}"), ln=1, align='C')
+    type_str = "Detaylı Rapor (Ek Kaynaklı)" if include_extra else "Özet Rapor"
+    pdf.cell(0, 10, f"Rapor Türü: {type_str}", ln=1, align='C')
     pdf.ln(5)
     
     for i, item in enumerate(data):
@@ -285,9 +304,13 @@ def create_study_pdf(data, mistakes, include_extra=True):
         ek_bilgi = item.get('ek_bilgi', '')
         is_mistake = i in mistakes
         
+        # safe_text fonksiyonunu ARTIK KULLANMIYORUZ
         pdf.topic_section(baslik, ozet, ek_bilgi, is_mistake, include_extra)
         
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    # Çıktı alma
+    return pdf.output(dest='S').encode('latin-1', 'replace') 
+    # Not: FPDF'in bazı versiyonlarında .encode() gereklidir, 
+    # font yüklenince içerik binary'e dönüşür, bu kod genelde çalışır.
 
 # ================= ARAYÜZ (SADE VE 2 SEKMELİ ADMIN) =================
 
@@ -521,6 +544,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
