@@ -452,48 +452,44 @@ elif st.session_state['step'] == 3:
     st.markdown("### 📝 Konu Listesi")
 
     # --- YENİ KART (CARD) TASARIMI ---
+   # --- YENİ KART TASARIMI (Buton Altta) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # Her konu bir "Kutu" (Container) içinde olacak
+        # 1. KUTU (CONTAINER) BAŞLANGICI
         with st.container(border=True):
             
-            # 1. BAŞLIK ALANI (Kutunun en üstü)
+            # A) Başlık Alanı
             if is_wrong:
-                st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]", icon="⚠️")
+                st.error(f"{item['alt_baslik']} - [TEKRAR ET]", icon="❌")
             else:
-                st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]", icon="🎉")
+                st.success(f"{item['alt_baslik']} - [TAMAMLANDI]", icon="✅")
 
-            # 2. ÖZET VE DİNLEME BUTONU (Yan Yana)
-            col_ozet, col_btn = st.columns([5, 1])
+            # B) Özet Metni (Sütun kullanmadığımız için tam genişlik yayılır)
+            st.markdown(f"**📖 Özet:** {item['ozet']}")
             
-            with col_ozet:
-                st.markdown(f"**📖 Özet:** {item['ozet']}")
-            
-            with col_btn:
-                # Butonu dikeyde ortalamak için boşluk bırakabiliriz veya direkt koyarız
-                st.write("") 
-                if st.button("🔊 Dinle", key=f"d_{i}", help="Özeti Sesli Oku"):
-                    with st.spinner("Ses hazırlanıyor..."):
-                        p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
-                        if p: st.audio(p, autoplay=True)
+            # C) Dinle Butonu (Özetin hemen altına gelir)
+            # İsterseniz 'use_container_width=True' ekleyerek butonu tam genişlik yapabilirsiniz.
+            if st.button("🔊 Özeti Dinle", key=f"d_{i}"):
+                with st.spinner("Ses hazırlanıyor..."):
+                    p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
+                    if p: st.audio(p, autoplay=True)
 
-            # 3. EK KAYNAK ALANI (Özetin hemen altında, kutunun içinde)
+            # D) Ek Kaynak Alanı (Bir ayraç ile alt kısma ekledik)
             ek_bilgi = item.get('ek_bilgi')
             if ek_bilgi:
-                # Expander da bu container'ın sınırları içinde kalır
+                st.write("---") # Şık bir ayraç çizgisi
+                
                 with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
                     st.info(ek_bilgi)
                     
-                    # Ek kaynak dinleme butonu (Expander açılınca görünür)
+                    # Ek kaynak dinleme butonu
                     if st.button("🎧 Ek Kaynağı Dinle", key=f"ed_{i}"):
                         with st.spinner("Ek kaynak seslendiriliyor..."):
                             p = generate_audio_openai(ek_bilgi, st.session_state['audio_speed'])
                             if p: st.audio(p, autoplay=True)
         
         st.divider() # Konular arasına çizgi
-
-        st.write("---")
 
 # --- ADIM 4: SON TEST (TOPLAM SORU EKLENDİ) ---
 elif st.session_state['step'] == 4:
@@ -527,6 +523,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
