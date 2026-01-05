@@ -488,34 +488,6 @@ elif st.session_state['step'] == 3:
         
         st.divider() # Konular arasına çizgi
 
-        
-
-        # 2. İÇERİK ETKİLEŞİMİ (Butonlar HTML içine giremez, hemen altına hizalayacağız)
-        # Görsel olarak bütünlük sağlamak için butonları HTML kutusunun "devamıymış" gibi yerleştiriyoruz.
-        
-        c_extra, c_audio = st.columns([4, 1])
-        
-        with c_extra:
-            # Ek Bilgi Varsa (Burada expander kullanıyoruz)
-            ek_bilgi = item.get('ek_bilgi')
-            if ek_bilgi:
-                with st.expander("📚 Akademik Ek Kaynak (Tıkla Oku)"):
-                    st.info(ek_bilgi) 
-                    if st.button("🎧 Ek Kaynağı Dinle", key=f"ek_dinle_{i}"):
-                        with st.spinner(".."):
-                            path = generate_audio_openai(ek_bilgi, audio_speed)
-                            if path: st.audio(path, autoplay=True)
-        
-        with c_audio:
-            # Özet Dinleme Butonu (Yukarıdaki HTML özetin seslendirmesi)
-            if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
-                with st.spinner(".."):
-                    path = generate_audio_openai(item['ozet'], audio_speed)
-                    if path: st.audio(path, autoplay=True)
-        
-        # Bir sonraki kart ile araya boşluk koy
-        st.write("")
-        st.write("")
         st.write("---")
 
 # --- ADIM 4: SON TEST (TOPLAM SORU EKLENDİ) ---
@@ -550,6 +522,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
