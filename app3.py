@@ -451,40 +451,45 @@ elif st.session_state['step'] == 3:
     st.divider()
     st.markdown("### 📝 Konu Listesi")
 
-    # --- YENİ MANTIK: HERKES İÇİN ÖZET AÇIK, SADECE BAŞLIK RENGİ FARKLI ---
+    # --- YENİ KART (CARD) TASARIMI ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # 1. SADECE BAŞLIK KUTUSU DEĞİŞİR
-        if is_wrong:
-            st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]")
-        else:
-            st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]")
-
-        # 2. İÇERİK YAPISI (HER İKİSİ İÇİN DE AYNI VE AÇIK)
-        col_txt, col_btn = st.columns([4, 1])
-        
-        with col_txt:
-            # Özet her zaman açık
-            st.write(f"**Özet:** {item['ozet']}")
+        # Her konu bir "Kutu" (Container) içinde olacak
+        with st.container(border=True):
             
-            # Ek Bilgi her zaman gizli (Expander içinde)
+            # 1. BAŞLIK ALANI (Kutunun en üstü)
+            if is_wrong:
+                st.error(f"❌ {item['alt_baslik']} - [TEKRAR ET]", icon="⚠️")
+            else:
+                st.success(f"✅ {item['alt_baslik']} - [TAMAMLANDI]", icon="🎉")
+
+            # 2. ÖZET VE DİNLEME BUTONU (Yan Yana)
+            col_ozet, col_btn = st.columns([5, 1])
+            
+            with col_ozet:
+                st.markdown(f"**📖 Özet:** {item['ozet']}")
+            
+            with col_btn:
+                # Butonu dikeyde ortalamak için boşluk bırakabiliriz veya direkt koyarız
+                st.write("") 
+                if st.button("🔊 Dinle", key=f"d_{i}", help="Özeti Sesli Oku"):
+                    with st.spinner("Ses hazırlanıyor..."):
+                        p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
+                        if p: st.audio(p, autoplay=True)
+
+            # 3. EK KAYNAK ALANI (Özetin hemen altında, kutunun içinde)
             ek_bilgi = item.get('ek_bilgi')
             if ek_bilgi:
+                # Expander da bu container'ın sınırları içinde kalır
                 with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
                     st.info(ek_bilgi)
-                    if st.button("🎧 Ek Bilgiyi Dinle", key=f"ed_{i}"):
-                            with st.spinner("."):
-                                p = generate_audio_openai(ek_bilgi, audio_speed)
-                                if p: st.audio(p, autoplay=True)
-
-        with col_btn:
-            st.write("") # Hizalama için
-            # Özet Dinleme Butonu her zaman açık
-            if st.button("🔊 Özeti Dinle", key=f"d_{i}", use_container_width=True):
-                with st.spinner("."):
-                    p = generate_audio_openai(item['ozet'], audio_speed)
-                    if p: st.audio(p, autoplay=True)
+                    
+                    # Ek kaynak dinleme butonu (Expander açılınca görünür)
+                    if st.button("🎧 Ek Kaynağı Dinle", key=f"ed_{i}"):
+                        with st.spinner("Ek kaynak seslendiriliyor..."):
+                            p = generate_audio_openai(ek_bilgi, st.session_state['audio_speed'])
+                            if p: st.audio(p, autoplay=True)
         
         st.divider() # Konular arasına çizgi
 
@@ -522,6 +527,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
