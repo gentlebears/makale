@@ -243,27 +243,45 @@ elif st.session_state['step'] == 3:
                     p = tts(d['ek_bilgi'])
                     if p: st.audio(p, autoplay=True)
 
-# STEP 4: SON TEST
+# STEP 4: SON TEST (HATA DÜZELTİLMİŞ HALİ)
 elif st.session_state['step'] == 4:
     with st.form("test2"):
         ans = {}
         for i, d in enumerate(st.session_state['data']):
             q = d['soru_data']
             st.write(f"**{i+1})** {q['soru']}")
-            ans[i] = st.radio("", [q['A'],q['B'],q['C'],q['D']], key=f"q2{i}")
+            # Radyo butonu seçenekleri
+            secenekler = [q.get('A',''), q.get('B',''), q.get('C',''), q.get('D','')]
+            # Boş seçenekleri filtrele (Hata önleyici)
+            secenekler = [s for s in secenekler if s] 
+            
+            ans[i] = st.radio("", secenekler, key=f"q2{i}")
             st.divider()
+            
         if st.form_submit_button("Tamamla"):
             sc = 0
             for i, d in enumerate(st.session_state['data']):
-                if ans[i] == d['soru_data'][d['soru_data']['dogru_sik']]: sc += 1
+                try:
+                    # 1. Doğru şıkkın harfini al ve temizle (örn: "A " -> "A")
+                    dogru_sik_harfi = d['soru_data']['dogru_sik'].strip()
+                    
+                    # 2. O harfin metnini al
+                    dogru_cevap_metni = d['soru_data'][dogru_sik_harfi]
+                    
+                    # 3. Kullanıcının cevabıyla karşılaştır
+                    if ans.get(i) == dogru_cevap_metni:
+                        sc += 1
+                except:
+                    # Eğer veri bozuksa veya key bulunamazsa puan verme ama çökme
+                    pass
             
-            # Kaydet (GÜNCELLENDİ: Toplam Soru Eklendi)
+            # Kaydet
             res = {
-                "ad_soyad": st.session_state['student_info']['name'],
-                "no": st.session_state['student_info']['no'],
-                "on_test": st.session_state['scores']['pre'],
+                "ad_soyad": st.session_state['student_info'].get('name', 'Bilinmiyor'),
+                "no": st.session_state['student_info'].get('no', '0'),
+                "on_test": st.session_state['scores'].get('pre', 0),
                 "son_test": sc,
-                "toplam_soru": len(st.session_state['data']), # <-- EKLENEN KISIM
+                "toplam_soru": len(st.session_state['data']),
                 "tarih": time.strftime("%Y-%m-%d %H:%M")
             }
             save_results(res)
