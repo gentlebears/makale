@@ -55,7 +55,8 @@ def init_state():
     defaults = {
         'step': 0, 'user_role': None, 'student_info': {},
         'scores': {'pre': 0, 'post': 0}, 'mistakes': [],
-        'data': [], 'audio_speed': 1.0 
+        'data': [], 'audio_speed': 1.0,
+        'audio_cache': {} # SES DOSYALARINI HATIRLAMAK İÇİN
     }
     for key, val in defaults.items():
         if key not in st.session_state: st.session_state[key] = val
@@ -79,7 +80,6 @@ def get_class_data_from_firebase():
 
 # --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
-    # Puanları Birleştir
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
     elif 'on_test' in df.columns: df['1. Test Doğru Sayısı'] = df['on_test']
@@ -92,20 +92,16 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     elif 'son_test_puan' in df.columns: df['2. Test Doğru Sayısı'] = df['son_test_puan']
     else: df['2. Test Doğru Sayısı'] = 0
 
-    # Sayısal Dönüşüm
     df['1. Test Doğru Sayısı'] = pd.to_numeric(df['1. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
     df['2. Test Doğru Sayısı'] = pd.to_numeric(df['2. Test Doğru Sayısı'], errors='coerce').fillna(0).astype(int)
     df['NET'] = df['2. Test Doğru Sayısı'] - df['1. Test Doğru Sayısı']
     
-    # İsimlendirme
     if 'ad_soyad' in df.columns: df['Ad Soyad'] = df['ad_soyad']
     else: df['Ad Soyad'] = "Bilinmiyor"
     if 'no' in df.columns: df['Öğrenci No'] = df['no']
     else: df['Öğrenci No'] = 0
 
-    # --- SORU SAYISI BELİRLEME MANTIĞI ---
     varsayilan = soru_sayisi_input if (soru_sayisi_input and soru_sayisi_input > 0) else 15
-    
     if 'toplam_soru' in df.columns:
         df['Soru Sayısı'] = df['toplam_soru'].fillna(varsayilan).astype(int)
     else:
@@ -115,9 +111,6 @@ def format_data_for_csv(df, soru_sayisi_input=None):
     for col in target_columns:
         if col not in df.columns: df[col] = 0 if 'Sayısı' in col or 'NET' in col or 'No' in col else ""
     return df[target_columns]
-
-# --- FONKSİYONLAR ---
-# (Eski font indirme fonksiyonunu sildik, artık gerek yok)
 
 def safe_text(text):
     if text is None: return ""
@@ -162,18 +155,14 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
 
-# --- PDF SINIFI (GÜNCELLENDİ) ---
+# --- PDF SINIFI ---
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
-        # GitHub'a yüklediğin dosyaları doğrudan kullanıyoruz.
-        # Regular (Normal) font
         self.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
-        # Bold (Kalın) font - 'B' stiliyle eşleştirildi
         self.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
 
     def header(self):
-        # Başlık için Bold kullanıyoruz
         self.set_font('Roboto', 'B', 14)
         self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C'); self.ln(5)
 
@@ -183,18 +172,15 @@ class PDF(FPDF):
         else:
             self.set_text_color(0, 100, 0); title = f"{title} (Tamamlandı)"
         
-        # Konu başlığı (BOLD)
         self.set_font('Roboto', 'B', 12)
         self.cell(0, 10, title, ln=1)
         
-        # İçerik metni (NORMAL)
         self.set_text_color(0)
         self.set_font('Roboto', '', 10)
         self.multi_cell(0, 6, summary); self.ln(2)
         
         if include_extra and extra:
             self.set_text_color(80)
-            # Ek bilgi etiketi için hafif küçük
             self.set_font('Roboto', '', 9)
             self.multi_cell(0, 6, f"[EK KAYNAK]: {extra}"); self.ln(2)
         
@@ -258,7 +244,6 @@ elif st.session_state['step'] == 1:
         if st.button("Yenile"):
             raw = get_class_data_from_firebase()
             if raw:
-                # O anki yüklü dersin soru sayısını varsayılan olarak al
                 varsayilan_soru = len(st.session_state['data']) if st.session_state['data'] else 15
                 df = format_data_for_csv(pd.DataFrame(raw), varsayilan_soru)
                 st.dataframe(df)
@@ -285,58 +270,69 @@ elif st.session_state['step'] == 3:
     
     if st.session_state['mistakes']:
         st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiğin var.")
-        
-        c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
-        with c1:
-            pdf1 = create_pdf(st.session_state['data'], st.session_state['mistakes'], False)
-            st.download_button("📥 Özet", pdf1, "Ozet.pdf", "application/pdf", use_container_width=True)
-        with c2:
-            pdf2 = create_pdf(st.session_state['data'], st.session_state['mistakes'], True)
-            st.download_button("📑 Detaylı", pdf2, "Detayli.pdf", "application/pdf", use_container_width=True)
-        with c3:
-            speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
-            st.session_state['audio_speed'] = speed_val
-        with c4:
-            if st.button("➡️ Devam", use_container_width=True):
-                st.session_state['step'] = 4; st.rerun()
-
     else:
         st.balloons(); st.success("Harika! Eksiğin yok.")
-        c1, c2 = st.columns([2, 1])
-        with c1:
-             speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0)
-             st.session_state['audio_speed'] = speed_val
-        with c2:
-             if st.button("➡️ Devam", use_container_width=True): 
-                 st.session_state['step'] = 4; st.rerun()
+
+    # Üst Panel Butonları
+    c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
+    with c1:
+        pdf1 = create_pdf(st.session_state['data'], st.session_state['mistakes'], False)
+        st.download_button("📥 Özet", pdf1, "Ozet.pdf", "application/pdf", use_container_width=True)
+    with c2:
+        pdf2 = create_pdf(st.session_state['data'], st.session_state['mistakes'], True)
+        st.download_button("📑 Detaylı", pdf2, "Detayli.pdf", "application/pdf", use_container_width=True)
+    with c3:
+        speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
+        st.session_state['audio_speed'] = speed_val
+    with c4:
+        if st.button("➡️ Devam", use_container_width=True):
+            st.session_state['step'] = 4; st.rerun()
     
     st.divider()
 
+    # --- YENİLENMİŞ LİSTE TASARIMI ---
     for i, item in enumerate(st.session_state['data']):
         wrong = i in st.session_state['mistakes']
         box = st.error if wrong else st.success
         
+        # Kutunun rengi duruma göre değişir ama içeriği aynıdır
         with box(f"{'🔻' if wrong else '✅'} {item['alt_baslik']}"):
             
-            # ÖZET
-            col_txt, col_btn = st.columns([9, 1])
-            with col_txt: st.write(f"**Özet:** {item['ozet']}")
+            # --- 1. KISIM: ÖZET ---
+            col_txt, col_btn = st.columns([8, 1])
+            with col_txt: 
+                st.write(item['ozet'])
+            
+            # Özet Sesi Butonu
             with col_btn:
-                if st.button("🔊", key=f"d_{i}", help="Özeti Dinle"):
-                    with st.spinner(".."):
+                summ_key = f"sum_{i}"
+                if st.button("🔊", key=f"btn_sum_{i}", help="Özeti Dinle"):
+                    with st.spinner("."):
                         p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
-                        if p: st.audio(p)
+                        if p: st.session_state['audio_cache'][summ_key] = p
+            
+            # Özet Player (Varsa Göster)
+            if summ_key in st.session_state['audio_cache']:
+                st.audio(st.session_state['audio_cache'][summ_key])
 
-            # EK BİLGİ
-            if wrong and item.get('ek_bilgi'):
-                st.markdown("---")
-                col_ek_txt, col_ek_btn = st.columns([9, 1])
-                with col_ek_txt: st.info(f"📚 **Ek Bilgi:** {item['ek_bilgi']}")
+            # --- 2. KISIM: EK BİLGİ (AÇILIR KUTU) ---
+            with st.expander("📚 Ek Bilgi ve Kaynaklar"):
+                col_ek_txt, col_ek_btn = st.columns([8, 1])
+                
+                with col_ek_txt: 
+                    st.info(item['ek_bilgi'])
+                
+                # Ek Bilgi Sesi Butonu
                 with col_ek_btn:
-                     if st.button("🎧", key=f"ed_{i}", help="Ek Bilgiyi Dinle"):
-                        with st.spinner(".."):
+                    extra_key = f"ext_{i}"
+                    if st.button("🎧", key=f"btn_ext_{i}", help="Ek Bilgiyi Dinle"):
+                        with st.spinner("."):
                             p = generate_audio_openai(item['ek_bilgi'], st.session_state['audio_speed'])
-                            if p: st.audio(p)
+                            if p: st.session_state['audio_cache'][extra_key] = p
+                
+                # Ek Bilgi Player (Varsa Göster)
+                if extra_key in st.session_state['audio_cache']:
+                    st.audio(st.session_state['audio_cache'][extra_key])
 
 elif st.session_state['step'] == 4:
     with st.form("post"):
@@ -358,6 +354,5 @@ elif st.session_state['step'] == 4:
                 "toplam_soru": len(st.session_state['data']),
                 "on_test": st.session_state['scores']['pre'], 
                 "son_test": sc
-                
             }
             if save_results_to_firebase(res): st.balloons(); st.success(f"Puan: {sc}")
