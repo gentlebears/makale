@@ -477,7 +477,6 @@ elif st.session_state['step'] == 3:
             # D) Ek Kaynak Alanı (Bir ayraç ile alt kısma ekledik)
             ek_bilgi = item.get('ek_bilgi')
             if ek_bilgi:
-                st.write("---") # Şık bir ayraç çizgisi
                 
                 with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
                     st.info(ek_bilgi)
@@ -522,6 +521,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
