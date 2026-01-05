@@ -419,53 +419,31 @@ elif st.session_state['step'] == 3:
     st.success(f"Ön Test Puanın: {st.session_state['scores']['pre']}")
     
     if st.session_state['mistakes']:
-        st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var. Aşağıdaki panelden çalışma planını indirebilir ve konuları çalışabilirsin.")
+        st.warning(f"Toplam {len(st.session_state['mistakes'])} konuda eksiklerin var. Aşağıdaki kırmızı ile işaretlenmiş konulara tekrar çalışmalısın.")
     else:
         st.balloons()
-        st.success("Tebrikler! Hiç eksiğin yok. Yine de konuları tekrar edebilirsin.")
+        st.success("Tebrikler! Hiç eksiğin yok. Tüm konuları başarıyla tamamladın.")
 
-    # --- PDFLERİ HAZIRLA (Butonlar için veri hazır olsun) ---
+    # --- PDFLERİ HAZIRLA ---
     pdf_ozet = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=False)
     pdf_full = create_study_pdf(st.session_state['data'], st.session_state['mistakes'], include_extra=True)
 
-    # --- TEK DİV İÇİNDE KONTROL PANELİ ---
+    # --- KONTROL PANELİ ---
     with st.container(border=True):
-        st.markdown("### 🛠️ Çalışma ve Kontrol Paneli")
-        
-        # 3 Sütuna bölüyoruz: [PDF İndirme Alanı] | [Hız Ayarı] | [İlerleme Butonu]
+        st.markdown("### 🛠️ Çalışma Paneli")
         col_pdf, col_speed, col_next = st.columns([2, 1, 1], gap="medium")
         
         # 1. Sütun: PDF İndirmeler
         with col_pdf:
-            st.write("📄 **Çalışma Planını İndir**")
+            st.write("📄 **Planı İndir**")
             c1, c2 = st.columns(2)
-            with c1:
-                st.download_button(
-                    "📥 Özet İndir", 
-                    data=pdf_ozet, 
-                    file_name="Ozet_Plan.pdf", 
-                    mime="application/pdf", 
-                    use_container_width=True
-                )
-            with c2:
-                st.download_button(
-                    "📑 Detaylı İndir", 
-                    data=pdf_full, 
-                    file_name="Detayli_Plan.pdf", 
-                    mime="application/pdf", 
-                    use_container_width=True
-                )
+            c1.download_button("📥 Özet", pdf_ozet, "Ozet.pdf", "application/pdf", use_container_width=True)
+            c2.download_button("📑 Detaylı", pdf_full, "Detayli.pdf", "application/pdf", use_container_width=True)
         
         # 2. Sütun: Hız Ayarı
         with col_speed:
             st.write("🎚️ **Ses Hızı**")
-            # label_visibility="collapsed" ile başlığı gizledik çünkü yukarıda st.write ile yazdık
-            audio_speed = st.select_slider(
-                "Hız", 
-                options=[0.75, 1.0, 1.25, 1.5, 2.0], 
-                value=1.0, 
-                label_visibility="collapsed"
-            )
+            audio_speed = st.select_slider("Hız", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
 
         # 3. Sütun: Son Sınava Geçiş
         with col_next:
@@ -476,41 +454,46 @@ elif st.session_state['step'] == 3:
 
     st.divider()
 
-    # --- KONU LİSTESİ VE SES OYNATICILAR ---
+    # --- KONU LİSTESİ (YENİLENMİŞ TASARIM) ---
     for i, item in enumerate(st.session_state['data']):
         is_wrong = i in st.session_state['mistakes']
         
-        # Kutu rengi belirleme
+        # Renk ve Başlık Belirleme
         if is_wrong:
-            msg_box = st.error
+            msg_box = st.error  # Kırmızı kutu
             icon = "🔻"
-            status = "(Eksik Konu - Lütfen Dinle)"
+            title_text = f"{item['alt_baslik']} - [TEKRAR ET]" # TEKRAR ET eklendi
         else:
-            msg_box = st.success
+            msg_box = st.success # Yeşil kutu
             icon = "✅"
-            status = "(Tamamlandı)"
+            title_text = f"{item['alt_baslik']} (Tamamlandı)"
 
-        with msg_box(f"{icon} {item['alt_baslik']} {status}"):
+        # Kutuyu oluştur
+        with msg_box(f"{icon} {title_text}"):
             
-            # İçerik Düzeni
-            c_text, c_audio = st.columns([4, 1])
+            # HİZALAMA İÇİN SÜTUNLAR: Metin (4 birim) | Buton (1 birim)
+            c_text, c_audio = st.columns([4, 1], gap="small")
             
             with c_text:
-                st.write(f"**Özet:** {item['ozet']}")
+                # Özet Metni
+                st.markdown(f"**Özet:** {item['ozet']}")
                 
-                # Ek Bilgi Varsa Expander İçinde Göster
+                # Ek Bilgi (Varsa)
                 ek_bilgi = item.get('ek_bilgi')
                 if ek_bilgi:
                     with st.expander("📚 Akademik Ek Kaynak (Detaylı Bilgi)"):
                         st.info(ek_bilgi)
+                        # Ek Bilgi Dinleme Butonu
                         if st.button("🎧 Ek Bilgiyi Dinle", key=f"ek_dinle_{i}"):
                             with st.spinner("Ek bilgi seslendiriliyor..."):
                                 path = generate_audio_openai(ek_bilgi, audio_speed)
                                 if path: st.audio(path, autoplay=True)
 
             with c_audio:
-                # Özet Dinleme Butonu (Sağ tarafta)
-                st.write("") # Hizalama için boşluk
+                # HİZALAMA HİLESİ: Butonu metinle ortalamak için üstten biraz boşluk bırakıyoruz.
+                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+                
+                # Özet Dinleme Butonu (Sağda ve hizalı)
                 if st.button("🔊 Özeti Dinle", key=f"dinle_{i}", use_container_width=True):
                     with st.spinner("Özet seslendiriliyor..."):
                         path = generate_audio_openai(item['ozet'], audio_speed)
@@ -550,5 +533,6 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
