@@ -50,19 +50,26 @@ try:
 except: 
     pass 
 
-# --- STATE YÖNETİMİ ---
+# --- STATE YÖNETİMİ (GÜÇLENDİRİLDİ) ---
 def init_state():
     defaults = {
         'step': 0, 'user_role': None, 'student_info': {},
         'scores': {'pre': 0, 'post': 0}, 'mistakes': [],
         'data': [], 'audio_speed': 1.0,
-        'audio_cache': {} # SES DOSYALARINI HATIRLAMAK İÇİN
+        'audio_cache': {} # Ses dosyalarını burada tutacağız
     }
     for key, val in defaults.items():
-        if key not in st.session_state: st.session_state[key] = val
+        if key not in st.session_state: 
+            st.session_state[key] = val
+
+# Sayfa her yüklendiğinde state'in sağlam olduğunu kontrol et
 init_state()
 
-# --- FIREBASE KAYIT ---
+# Ekstra güvenlik: audio_cache silinmişse veya bozulmuşsa onar
+if 'audio_cache' not in st.session_state or not isinstance(st.session_state['audio_cache'], dict):
+    st.session_state['audio_cache'] = {}
+
+# --- FONKSİYONLAR ---
 def save_results_to_firebase(student_data):
     if db is None: return False
     try:
@@ -78,7 +85,6 @@ def get_class_data_from_firebase():
         return [doc.to_dict() for doc in docs]
     except: return []
 
-# --- VERİ DÜZELTME MOTORU ---
 def format_data_for_csv(df, soru_sayisi_input=None):
     if 'on_test_puan' in df.columns and 'on_test' in df.columns:
         df['1. Test Doğru Sayısı'] = df['on_test_puan'].combine_first(df['on_test'])
@@ -155,15 +161,29 @@ def generate_audio_openai(text, speed):
         return tfile.name
     except: return None
 
-# --- PDF SINIFI ---
+# --- PDF SINIFI (GÜVENLİ PATH) ---
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
-        self.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
-        self.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
+        # Font yollarını garantili şekilde alıyoruz
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        font_r = os.path.join(base_dir, 'Roboto-Regular.ttf')
+        font_b = os.path.join(base_dir, 'Roboto-Bold.ttf')
+        
+        # Eğer dosya yoksa varsayılan fonta düş (Çökmemesi için)
+        if os.path.exists(font_r):
+            self.add_font('Roboto', '', font_r, uni=True)
+        else:
+            self.add_font('Roboto', '', 'Arial', uni=True) # Fallback
+            
+        if os.path.exists(font_b):
+            self.add_font('Roboto', 'B', font_b, uni=True)
+        else:
+            self.add_font('Roboto', 'B', 'Arial', uni=True) # Fallback
 
     def header(self):
-        self.set_font('Roboto', 'B', 14)
+        try: self.set_font('Roboto', 'B', 14)
+        except: self.set_font('Arial', 'B', 14)
         self.cell(0, 10, 'Kişiselleştirilmiş Çalışma Planı', 0, 1, 'C'); self.ln(5)
 
     def topic_section(self, title, summary, extra, mistake, include_extra):
@@ -172,27 +192,43 @@ class PDF(FPDF):
         else:
             self.set_text_color(0, 100, 0); title = f"{title} (Tamamlandı)"
         
-        self.set_font('Roboto', 'B', 12)
+        try: self.set_font('Roboto', 'B', 12)
+        except: self.set_font('Arial', 'B', 12)
         self.cell(0, 10, title, ln=1)
         
         self.set_text_color(0)
-        self.set_font('Roboto', '', 10)
+        try: self.set_font('Roboto', '', 10)
+        except: self.set_font('Arial', '', 10)
         self.multi_cell(0, 6, summary); self.ln(2)
         
         if include_extra and extra:
             self.set_text_color(80)
-            self.set_font('Roboto', '', 9)
+            try: self.set_font('Roboto', '', 9)
+            except: self.set_font('Arial', '', 9)
             self.multi_cell(0, 6, f"[EK KAYNAK]: {extra}"); self.ln(2)
         
         self.set_draw_color(200); self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
 
+# PDF oluşturma işlemini önbelleğe alıyoruz (Donmayı engeller)
+@st.cache_data(show_spinner=False)
 def create_pdf(data, mistakes, extra=True):
-    pdf = PDF(); pdf.add_page(); pdf.set_auto_page_break(True, 15)
-    pdf.set_font("Roboto", '', 10); pdf.set_text_color(100)
-    pdf.cell(0, 10, f"Rapor Türü: {'Detaylı' if extra else 'Özet'}", ln=1, align='C'); pdf.ln(5)
-    for i, item in enumerate(data):
-        pdf.topic_section(item['alt_baslik'], item['ozet'], item['ek_bilgi'], i in mistakes, extra)
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    try:
+        pdf = PDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(True, 15)
+        # Hata önleyici font seçimi
+        try: pdf.set_font("Roboto", '', 10)
+        except: pdf.set_font("Arial", '', 10)
+        
+        pdf.set_text_color(100)
+        pdf.cell(0, 10, f"Rapor Türü: {'Detaylı' if extra else 'Özet'}", ln=1, align='C'); pdf.ln(5)
+        for i, item in enumerate(data):
+            # i'nin mistakes listesinde olup olmadığını kontrol et
+            is_mistake = i in mistakes
+            pdf.topic_section(item['alt_baslik'], item['ozet'], item['ek_bilgi'], is_mistake, extra)
+        return pdf.output(dest='S').encode('latin-1', 'replace')
+    except:
+        return None
 
 # ================= ARAYÜZ =================
 st.title("☁️ Gemini Eğitim Platformu")
@@ -273,14 +309,24 @@ elif st.session_state['step'] == 3:
     else:
         st.balloons(); st.success("Harika! Eksiğin yok.")
 
-    # Üst Panel Butonları
+    # --- PDF VE BUTTON PANELİ ---
     c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
+    
+    # PDF oluşturmayı güvenli hale getirdik (try-except içinde)
+    pdf_ozet, pdf_detay = None, None
+    try:
+        pdf_ozet = create_pdf(st.session_state['data'], st.session_state['mistakes'], False)
+        pdf_detay = create_pdf(st.session_state['data'], st.session_state['mistakes'], True)
+    except: pass # PDF hatası olursa sayfa çökmesin
+
     with c1:
-        pdf1 = create_pdf(st.session_state['data'], st.session_state['mistakes'], False)
-        st.download_button("📥 Özet", pdf1, "Ozet.pdf", "application/pdf", use_container_width=True)
+        if pdf_ozet:
+            st.download_button("📥 Özet", pdf_ozet, "Ozet.pdf", "application/pdf", use_container_width=True)
+        else: st.warning("PDF Hazırlanıyor...")
     with c2:
-        pdf2 = create_pdf(st.session_state['data'], st.session_state['mistakes'], True)
-        st.download_button("📑 Detaylı", pdf2, "Detayli.pdf", "application/pdf", use_container_width=True)
+        if pdf_detay:
+            st.download_button("📑 Detaylı", pdf_detay, "Detayli.pdf", "application/pdf", use_container_width=True)
+        else: st.warning("PDF Hazırlanıyor...")
     with c3:
         speed_val = st.select_slider("Ses Hızı", options=[0.75, 1.0, 1.25, 1.5, 2.0], value=1.0, label_visibility="collapsed")
         st.session_state['audio_speed'] = speed_val
@@ -290,20 +336,18 @@ elif st.session_state['step'] == 3:
     
     st.divider()
 
-    # --- YENİLENMİŞ LİSTE TASARIMI ---
+    # --- LİSTE VE SES ÖN BELLEĞİ ---
     for i, item in enumerate(st.session_state['data']):
         wrong = i in st.session_state['mistakes']
         box = st.error if wrong else st.success
         
-        # Kutunun rengi duruma göre değişir ama içeriği aynıdır
         with box(f"{'🔻' if wrong else '✅'} {item['alt_baslik']}"):
             
             # --- 1. KISIM: ÖZET ---
             col_txt, col_btn = st.columns([8, 1])
-            with col_txt: 
-                st.write(item['ozet'])
+            with col_txt: st.write(item['ozet'])
             
-            # Özet Sesi Butonu
+            # Özet Sesi
             with col_btn:
                 summ_key = f"sum_{i}"
                 if st.button("🔊", key=f"btn_sum_{i}", help="Özeti Dinle"):
@@ -311,18 +355,16 @@ elif st.session_state['step'] == 3:
                         p = generate_audio_openai(item['ozet'], st.session_state['audio_speed'])
                         if p: st.session_state['audio_cache'][summ_key] = p
             
-            # Özet Player (Varsa Göster)
+            # Player (Cache'den oku)
             if summ_key in st.session_state['audio_cache']:
                 st.audio(st.session_state['audio_cache'][summ_key])
 
-            # --- 2. KISIM: EK BİLGİ (AÇILIR KUTU) ---
+            # --- 2. KISIM: EK BİLGİ ---
             with st.expander("📚 Ek Bilgi ve Kaynaklar"):
                 col_ek_txt, col_ek_btn = st.columns([8, 1])
+                with col_ek_txt: st.info(item['ek_bilgi'])
                 
-                with col_ek_txt: 
-                    st.info(item['ek_bilgi'])
-                
-                # Ek Bilgi Sesi Butonu
+                # Ek Bilgi Sesi
                 with col_ek_btn:
                     extra_key = f"ext_{i}"
                     if st.button("🎧", key=f"btn_ext_{i}", help="Ek Bilgiyi Dinle"):
@@ -330,7 +372,7 @@ elif st.session_state['step'] == 3:
                             p = generate_audio_openai(item['ek_bilgi'], st.session_state['audio_speed'])
                             if p: st.session_state['audio_cache'][extra_key] = p
                 
-                # Ek Bilgi Player (Varsa Göster)
+                # Player (Cache'den oku)
                 if extra_key in st.session_state['audio_cache']:
                     st.audio(st.session_state['audio_cache'][extra_key])
 
