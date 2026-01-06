@@ -405,7 +405,7 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                 csv = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 Tabloyu Excel (CSV) Olarak İndir",
-                    data=csv,
+                    data=csv.encode('utf-8-sig'),
                     file_name="ogrenci_sinav_sonuclari.csv",
                     mime="text/csv"
                 )
@@ -544,6 +544,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
