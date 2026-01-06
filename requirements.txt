@@ -7,3 +7,4 @@ fpdf
 openai-whisper
 nest_asyncio
 ffmpeg-python
+plotly
