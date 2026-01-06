@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import time
 import firebase_admin
+import plotly.express as px # Grafik
 from firebase_admin import credentials, firestore
 from fpdf import FPDF
 from openai import OpenAI 
@@ -385,32 +386,72 @@ elif st.session_state['step'] == 1 and st.session_state['user_role'] == 'admin':
                     else: st.error("Ses ayrıştırılamadı.")
                 except Exception as e: st.error(str(e))
     
-    # 2. SEKME: SINAV SONUÇLARI
+    # 2. SEKME: SINAV SONUÇLARI (GRAFİK + METRİKLER + DÜZELTİLMİŞ CSV)
     with tab_results:
-        st.subheader("Öğrenci Sınav Sonuçları")
-        if st.button("Sonuçları Gör / Yenile"):
+        st.subheader("📊 Sınıf Performans Analizi")
+        if st.button("Sonuçları Getir / Yenile", type="primary"):
             data_raw = get_class_data_from_firebase()
+            
             if data_raw:
                 df_raw = pd.DataFrame(data_raw)
-                
-                # O anki yüklü dersin soru sayısını yedek (varsayılan) olarak alıyoruz
-                # 999 görürsen firebase kontrolü yap, hata ayıkla
-                varsayilan_soru = len(st.session_state['data']) if st.session_state['data'] else 999
-                
-                # Fonksiyonu çağırırken veritabanı öncelikli çalışacak
+                # Soru sayısını al (varsayılan 15)
+                varsayilan_soru = len(st.session_state['data']) if st.session_state['data'] else 15
                 df_clean = format_data_for_csv(df_raw, soru_sayisi_input=varsayilan_soru)
                 
+                # --- A) İSTATİSTİK KARTLARI (EN ÜST) ---
+                avg_net = df_clean['NET'].mean()
+                max_score = df_clean['2. Test Doğru Sayısı'].max()
+                total_student = len(df_clean)
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Toplam Öğrenci", f"{total_student} Kişi")
+                c2.metric("Sınıf Ortalama Gelişim (NET)", f"+{avg_net:.1f}", delta_color="normal")
+                c3.metric("En Yüksek Son Test Doğrusu", f"{int(max_score)}")
+                
+                st.divider()
+
+                # --- B) GELİŞİM GRAFİĞİ (PLOTLY - KIRMIZI/YEŞİL) ---
+                st.markdown("### 📈 Öğrenci Bazlı Gelişim Grafiği")
+                
+                # Veriyi grafik için uygun formata (uzun format) çeviriyoruz
+                df_chart = df_clean[['Ad Soyad', '1. Test Doğru Sayısı', '2. Test Doğru Sayısı']]
+                df_melted = df_chart.melt(id_vars='Ad Soyad', var_name='Test Türü', value_name='Puan')
+                
+                # Grafiği Çiz
+                fig = px.bar(
+                    df_melted, 
+                    x='Ad Soyad', 
+                    y='Puan', 
+                    color='Test Türü',
+                    barmode='group', # Sütunları yan yana koy
+                    text_auto=True,  # Puanı üstüne yaz
+                    color_discrete_map={
+                        '1. Test Doğru Sayısı': '#EF553B', # Kırmızı
+                        '2. Test Doğru Sayısı': '#00CC96'  # Yeşil
+                    },
+                    title="Ön Test vs Son Test Karşılaştırması"
+                )
+                fig.update_layout(xaxis_title="Öğrenciler", yaxis_title="Doğru Sayısı")
+                st.plotly_chart(fig, use_container_width=True)
+
+                st.divider()
+                
+                # --- C) LİSTE VE İNDİRME ---
+                st.markdown("### 📋 Detaylı Liste")
                 st.dataframe(df_clean, use_container_width=True)
                 
-                csv = df_clean.to_csv(sep=';', index=False, encoding='utf-8-sig')
+                # CSV İNDİRME (Hata veren yer burasıydı, şimdi encode eklendi)
+                csv = df_clean.to_csv(sep=';', index=False).encode('utf-8-sig')
+                
                 st.download_button(
                     label="📥 Tabloyu Excel (CSV) Olarak İndir",
-                    data=csv.encode('utf-8-sig'),
+                    data=csv,
                     file_name="ogrenci_sinav_sonuclari.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
             else: 
-                st.info("Henüz veritabanında sonuç yok.")
+                st.info("Henüz veritabanında kayıtlı sınav sonucu yok.")
 
 # --- ADIM 2: ÖN TEST ---
 elif st.session_state['step'] == 2:
@@ -544,6 +585,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
