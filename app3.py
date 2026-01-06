@@ -315,7 +315,7 @@ def create_study_pdf(data, mistakes, include_extra=True):
 
 # ================= ARAYÜZ (SADE VE 2 SEKMELİ ADMIN) =================
 
-st.title("☁️ Gemini Eğitim Platformu (Cloud v4 Stable)")
+st.title("Kişiselleştirilmiş Eğitim Platformu")
 
 LESSON_FILE = "lesson_data.json"
 
@@ -585,6 +585,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
