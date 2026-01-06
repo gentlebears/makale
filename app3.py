@@ -18,7 +18,7 @@ from fpdf import FPDF
 from openai import OpenAI 
 
 # --- AYARLAR ---
-st.set_page_config(page_title="Gemini Eğitim Platformu (v4 Final)", layout="wide")
+st.set_page_config(page_title="Kişiselleştirilmiş Eğitim Platformu", layout="wide")
 nest_asyncio.apply()
 
 # --- API KEYLER ---
@@ -585,6 +585,7 @@ elif st.session_state['step'] == 4:
             if save_results_to_firebase(res):
                 st.balloons()
                 st.success(f"Sınav Bitti! Puan: {score} / {len(st.session_state['data'])}")
+
 
 
 
